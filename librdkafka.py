@@ -115,10 +115,13 @@ class Topic(object):
     def __init__(self, name, producer, topic_config):
         f = _lib.rd_kafka_topic_new
         f.restype = c_void_p
-        self.pointer = f()
-        cfg = deepcopy(topic_config)
-        self.pointer = f(producer.pointer, name, cfg.pointer)
-        cfg.pointer = None
+
+        # prevent producer getting garbage-collected for the life of this Topic:
+        self._producer = producer
+
+        cfg = deepcopy(topic_config) # f() would free topic_config.pointer
+        self.pointer = f(self._producer.pointer, name, cfg.pointer)
+        cfg.pointer = None # prevent double-free in cfg.__del__()
         if not self.pointer:
             raise LibrdkafkaException(_errno2str())
 
