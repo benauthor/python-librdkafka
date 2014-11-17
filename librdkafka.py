@@ -118,6 +118,8 @@ _ffi.cdef(
                        int timeout_ms);
     void rd_kafka_metadata_destroy (const struct rd_kafka_metadata *metadata);
 
+    int rd_kafka_poll (rd_kafka_t *rk, int timeout_ms);
+    int rd_kafka_outq_len (rd_kafka_t *rk);
     """)
 _lib = _ffi.verify("#include <librdkafka/rdkafka.h>", libraries=['rdkafka'])
 
@@ -218,21 +220,13 @@ class KafkaHandle(object):
         cfg.cdata = None
         if self.cdata == _ffi.NULL:
             raise LibrdkafkaException(_ffi.string(errstr))
-        self.registered_topics = {} # {"name": topic_instance}
 
     def __del__(self):
         _lib.rd_kafka_destroy(self.cdata)
+        super(KafkaHandle, self).__del__()
 
-    def configure_topic(self, name, topic_config):
-        self.registered_topics[name] = self.topic_type(name, self, topic_config)
-
-    def get_topic(self, name):
-        try:
-            return self.registered_topics[name]
-        except KeyError:
-            raise LibrdkafkaException(
-                'Topic "{}" has not been registered; call configure_topic() '
-                'first.'.format(name))
+    def open_topic(self, name, topic_config):
+        return self.topic_type(name, self, topic_config)
 
 
 class ProducerTopic(BaseTopic):
@@ -257,7 +251,12 @@ class Producer(KafkaHandle):
         super(Producer, self).__init__(handle_type=_lib.RD_KAFKA_PRODUCER,
                                        config=config)
 
-    # TODO flush queues before calling super.__del__
+    def __del__(self):
+        # flush the write queues:
+        while _lib.rd_kafka_outq_len(self.cdata) > 0:
+            # TODO make sure we can break out of here
+            _lib.rd_kafka_poll(self.cdata, 100)
+        super(Producer, self).__del__()
 
 
 class Metadata(object):
