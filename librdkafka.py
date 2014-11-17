@@ -176,9 +176,21 @@ class KafkaHandle(object):
         cfg.cdata = None
         if self.cdata == _ffi.NULL:
             raise LibrdkafkaException(_ffi.string(errstr))
+        self.registered_topics = {} # {"name": Topic}
 
     def __del__(self):
         _lib.rd_kafka_destroy(self.cdata)
+
+    def configure_topic(self, name, topic_config):
+        self.registered_topics[name] = Topic(name, self, topic_config)
+
+    def get_topic(self, name):
+        try:
+            return self.registered_topics[name]
+        except KeyError:
+            raise LibrdkafkaException(
+                'Topic "{}" has not been registered; call configure_topic() '
+                'first.'.format(name))
 
 
 class Producer(KafkaHandle):
@@ -186,15 +198,17 @@ class Producer(KafkaHandle):
         super(Producer, self).__init__(handle_type=_lib.RD_KAFKA_PRODUCER,
                                        config=config)
 
+    # TODO flush queues before calling super.__del__
+
 
 class Topic(object):
-    def __init__(self, name, producer, topic_config):
-        # prevent producer getting garbage-collected for the life of this Topic:
-        self._producer = producer
+    def __init__(self, name, kafka_handle, topic_config):
+        # prevent handle getting garbage-collected for the life of this Topic:
+        self._kafka_handle = kafka_handle
 
         cfg = deepcopy(topic_config) # next call would free topic_config.cdata
         self.cdata = _lib.rd_kafka_topic_new(
-                         self._producer.cdata, name, cfg.cdata)
+                         self._kafka_handle.cdata, name, cfg.cdata)
         cfg.cdata = None # prevent double-free in cfg.__del__()
         if self.cdata == _ffi.NULL:
             raise LibrdkafkaException(_errno2str())
@@ -253,3 +267,9 @@ class Metadata(object):
         d['orig_broker_name'] = _ffi.string(meta.orig_broker_name)
 
         _lib.rd_kafka_metadata_destroy(meta_dp[0])
+
+
+class Consumer(KafkaHandle):
+    def __init__(self, config):
+        super(Consumer, self).__init__(handle_type=_lib.RD_KAFKA_CONSUMER,
+                                       config=config)
