@@ -1,4 +1,5 @@
 from copy import deepcopy
+import errno
 
 from cffi import FFI
 
@@ -17,6 +18,22 @@ _ffi.cdef(
 
     const char *rd_kafka_err2str (rd_kafka_resp_err_t err);
     rd_kafka_resp_err_t rd_kafka_errno2err (int errnox);
+
+    typedef struct rd_kafka_message_s {
+        rd_kafka_resp_err_t err;   /* Non-zero for error signaling. */
+        rd_kafka_topic_t *rkt;     /* Topic */
+        int32_t partition;         /* Partition */
+        void   *payload;           /* err==0: Message payload
+                                    * err!=0: Error string */
+        size_t  len;               /* err==0: Message payload length
+                                    * err!=0: Error string length */
+        void   *key;               /* err==0: Optional message key */
+        size_t  key_len;           /* err==0: Optional message key length */
+        int64_t offset;            /* Message offset (or offset for error
+                                    * if err!=0 if applicable). */
+        void  *_private;           /* rdkafka private pointer: DO NOT MODIFY */
+    } rd_kafka_message_t;
+    void rd_kafka_message_destroy (rd_kafka_message_t *rkmessage);
 
     typedef enum {RD_KAFKA_CONF_OK, ...  } rd_kafka_conf_res_t;
     rd_kafka_conf_t *rd_kafka_conf_new (void);
@@ -47,6 +64,13 @@ _ffi.cdef(
     void rd_kafka_topic_destroy (rd_kafka_topic_t *rkt);
 
     #define RD_KAFKA_PARTITION_UA ...
+
+    int rd_kafka_consume_start (rd_kafka_topic_t *rkt, int32_t partition,
+                                int64_t offset);
+    int rd_kafka_consume_stop (rd_kafka_topic_t *rkt, int32_t partition);
+    rd_kafka_message_t *rd_kafka_consume (rd_kafka_topic_t *rkt,
+                                          int32_t partition, int timeout_ms);
+
     #define RD_KAFKA_MSG_F_COPY ...
 
     int rd_kafka_produce (rd_kafka_topic_t *rkt, int32_t partitition,
@@ -170,7 +194,7 @@ class TopicConfig(object):
 class BaseTopic(object):
     def __init__(self, name, kafka_handle, topic_config):
         # prevent handle getting garbage-collected for the life of this Topic:
-        self._kafka_handle = kafka_handle
+        self._kafka_handle = kafka_handle # TODO obsolete
 
         cfg = deepcopy(topic_config) # next call would free topic_config.cdata
         self.cdata = _lib.rd_kafka_topic_new(
@@ -276,9 +300,54 @@ class Metadata(object):
         _lib.rd_kafka_metadata_destroy(meta_dp[0])
 
 
+class ConsumerTopic(BaseTopic):
+    class PartitionReader(object):
+        def __init__(self, topic, partition, start_offset,
+                     default_timeout_ms=0):
+            self.topic_p = topic.cdata
+            self.partition = partition
+            self.timeout = default_timeout_ms
+            rv = _lib.rd_kafka_consume_start(self.topic_p,
+                                             self.partition, start_offset)
+            if rv:
+                raise LibrdkafkaException(_errno2str())
+
+        def __del__(self):
+            rv = _lib.rd_kafka_consume_stop(self.topic_p, self.partition)
+            if rv:
+                raise LibrdkafkaException(_errno2str())
+
+        def consume(self, timeout_ms=None):
+            msg = _lib.rd_kafka_consume(
+                      self.topic_p, self.partition,
+                      self.timeout if timeout_ms is None else timeout_ms)
+            if msg == _ffi.NULL:
+                if _ffi.errno == errno.ETIMEDOUT:
+                    return None
+                elif _ffi.errno == errno.ENOENT:
+                    raise LibrdkafkaException("Topic/partition gone?!")
+            else:
+                return msg # TODO wrap into class, for garbage-collection!
+
+    def __init__(self, *args, **kwargs):
+        self.readers = {} # {partition_id: PartitionReader() }
+        super(ConsumerTopic, self).__init__(*args, **kwargs)
+
+    def get_reader(self, partition, offset=None, default_timeout_ms=None):
+        """ NB: providing an offset starts a new reader """
+        if offset is not None:
+            self.readers[partition] = self.PartitionReader(
+                                              self, partition, offset,
+                                              default_timeout_ms or 0)
+        try:
+            return self.readers[partition]
+        except KeyError:
+            raise LibrdkafkaException("For new readers 'offset' is mandatory.")
+
+
 class Consumer(KafkaHandle):
+    topic_type = ConsumerTopic
+
     def __init__(self, config):
         super(Consumer, self).__init__(handle_type=_lib.RD_KAFKA_CONSUMER,
                                        config=config)
-
-
