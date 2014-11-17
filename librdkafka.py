@@ -167,41 +167,7 @@ class TopicConfig(object):
             raise LibrdkafkaException(_ffi.string(errstr))
 
 
-class KafkaHandle(object):
-    def __init__(self, handle_type, config):
-        errstr = _mk_errstr()
-        cfg = deepcopy(config) # rd_kafka_new() will free config.cdata
-        self.cdata = _lib.rd_kafka_new(
-                         handle_type, cfg.cdata, errstr, len(errstr))
-        cfg.cdata = None
-        if self.cdata == _ffi.NULL:
-            raise LibrdkafkaException(_ffi.string(errstr))
-        self.registered_topics = {} # {"name": Topic}
-
-    def __del__(self):
-        _lib.rd_kafka_destroy(self.cdata)
-
-    def configure_topic(self, name, topic_config):
-        self.registered_topics[name] = Topic(name, self, topic_config)
-
-    def get_topic(self, name):
-        try:
-            return self.registered_topics[name]
-        except KeyError:
-            raise LibrdkafkaException(
-                'Topic "{}" has not been registered; call configure_topic() '
-                'first.'.format(name))
-
-
-class Producer(KafkaHandle):
-    def __init__(self, config):
-        super(Producer, self).__init__(handle_type=_lib.RD_KAFKA_PRODUCER,
-                                       config=config)
-
-    # TODO flush queues before calling super.__del__
-
-
-class Topic(object):
+class BaseTopic(object):
     def __init__(self, name, kafka_handle, topic_config):
         # prevent handle getting garbage-collected for the life of this Topic:
         self._kafka_handle = kafka_handle
@@ -216,6 +182,37 @@ class Topic(object):
     def __del__(self):
         _lib.rd_kafka_topic_destroy(self.cdata)
 
+
+class KafkaHandle(object):
+    topic_type = BaseTopic
+
+    def __init__(self, handle_type, config):
+        errstr = _mk_errstr()
+        cfg = deepcopy(config) # rd_kafka_new() will free config.cdata
+        self.cdata = _lib.rd_kafka_new(
+                         handle_type, cfg.cdata, errstr, len(errstr))
+        cfg.cdata = None
+        if self.cdata == _ffi.NULL:
+            raise LibrdkafkaException(_ffi.string(errstr))
+        self.registered_topics = {} # {"name": topic_instance}
+
+    def __del__(self):
+        _lib.rd_kafka_destroy(self.cdata)
+
+    def configure_topic(self, name, topic_config):
+        self.registered_topics[name] = self.topic_type(name, self, topic_config)
+
+    def get_topic(self, name):
+        try:
+            return self.registered_topics[name]
+        except KeyError:
+            raise LibrdkafkaException(
+                'Topic "{}" has not been registered; call configure_topic() '
+                'first.'.format(name))
+
+
+class ProducerTopic(BaseTopic):
+
     def produce(self, payload, key=None,
                 partition=_lib.RD_KAFKA_PARTITION_UA, msg_opaque=None):
         key = key or _ffi.NULL
@@ -227,6 +224,16 @@ class Topic(object):
                  msg_opaque)
         if rv:
             raise LibrdkafkaException(_errno2str())
+
+
+class Producer(KafkaHandle):
+    topic_type = ProducerTopic
+
+    def __init__(self, config):
+        super(Producer, self).__init__(handle_type=_lib.RD_KAFKA_PRODUCER,
+                                       config=config)
+
+    # TODO flush queues before calling super.__del__
 
 
 class Metadata(object):
@@ -273,3 +280,5 @@ class Consumer(KafkaHandle):
     def __init__(self, config):
         super(Consumer, self).__init__(handle_type=_lib.RD_KAFKA_CONSUMER,
                                        config=config)
+
+
