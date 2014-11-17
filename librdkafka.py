@@ -223,7 +223,6 @@ class KafkaHandle(object):
 
     def __del__(self):
         _lib.rd_kafka_destroy(self.cdata)
-        super(KafkaHandle, self).__del__()
 
     def open_topic(self, name, topic_config):
         return self.topic_type(name, self, topic_config)
@@ -299,49 +298,42 @@ class Metadata(object):
         _lib.rd_kafka_metadata_destroy(meta_dp[0])
 
 
+class TopicPartition(object):
+    def __init__(self, topic, partition, start_offset, default_timeout_ms=0):
+        """ For convenience, call ConsumerTopic.open_partition() instead """
+        self.topic = topic
+        self.partition = partition
+        self.timeout = default_timeout_ms
+        rv = _lib.rd_kafka_consume_start(self.topic.cdata,
+                                         self.partition, start_offset)
+        if rv:
+            raise LibrdkafkaException(_errno2str())
+
+    def __del__(self):
+        rv = _lib.rd_kafka_consume_stop(self.topic.cdata, self.partition)
+        if rv:
+            raise LibrdkafkaException(_errno2str())
+
+    def consume(self, timeout_ms=None):
+        msg = _lib.rd_kafka_consume(
+                  self.topic.cdata, self.partition,
+                  self.timeout if timeout_ms is None else timeout_ms)
+        if msg == _ffi.NULL:
+            if _ffi.errno == errno.ETIMEDOUT:
+                return None
+            elif _ffi.errno == errno.ENOENT:
+                raise LibrdkafkaException("Topic/partition gone?!")
+        else:
+            return msg # TODO wrap into class, for garbage-collection!
+
+
 class ConsumerTopic(BaseTopic):
-    class PartitionReader(object):
-        def __init__(self, topic, partition, start_offset,
-                     default_timeout_ms=0):
-            self.topic_p = topic.cdata
-            self.partition = partition
-            self.timeout = default_timeout_ms
-            rv = _lib.rd_kafka_consume_start(self.topic_p,
-                                             self.partition, start_offset)
-            if rv:
-                raise LibrdkafkaException(_errno2str())
-
-        def __del__(self):
-            rv = _lib.rd_kafka_consume_stop(self.topic_p, self.partition)
-            if rv:
-                raise LibrdkafkaException(_errno2str())
-
-        def consume(self, timeout_ms=None):
-            msg = _lib.rd_kafka_consume(
-                      self.topic_p, self.partition,
-                      self.timeout if timeout_ms is None else timeout_ms)
-            if msg == _ffi.NULL:
-                if _ffi.errno == errno.ETIMEDOUT:
-                    return None
-                elif _ffi.errno == errno.ENOENT:
-                    raise LibrdkafkaException("Topic/partition gone?!")
-            else:
-                return msg # TODO wrap into class, for garbage-collection!
-
     def __init__(self, *args, **kwargs):
         self.readers = {} # {partition_id: PartitionReader() }
         super(ConsumerTopic, self).__init__(*args, **kwargs)
 
-    def get_reader(self, partition, offset=None, default_timeout_ms=None):
-        """ NB: providing an offset starts a new reader """
-        if offset is not None:
-            self.readers[partition] = self.PartitionReader(
-                                              self, partition, offset,
-                                              default_timeout_ms or 0)
-        try:
-            return self.readers[partition]
-        except KeyError:
-            raise LibrdkafkaException("For new readers 'offset' is mandatory.")
+    def open_partition(self, *args, **kwargs):
+        return TopicPartition(self, *args, **kwargs)
 
 
 class Consumer(KafkaHandle):
