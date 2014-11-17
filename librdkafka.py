@@ -167,18 +167,24 @@ class TopicConfig(object):
             raise LibrdkafkaException(_ffi.string(errstr))
 
 
-class Producer(object):
-    def __init__(self, config):
+class KafkaHandle(object):
+    def __init__(self, handle_type, config):
         errstr = _mk_errstr()
         cfg = deepcopy(config) # rd_kafka_new() will free config.cdata
         self.cdata = _lib.rd_kafka_new(
-                         _lib.RD_KAFKA_PRODUCER, cfg.cdata, errstr, len(errstr))
+                         handle_type, cfg.cdata, errstr, len(errstr))
         cfg.cdata = None
         if self.cdata == _ffi.NULL:
             raise LibrdkafkaException(_ffi.string(errstr))
 
     def __del__(self):
         _lib.rd_kafka_destroy(self.cdata)
+
+
+class Producer(KafkaHandle):
+    def __init__(self, config):
+        super(Producer, self).__init__(handle_type=_lib.RD_KAFKA_PRODUCER,
+                                       config=config)
 
 
 class Topic(object):
