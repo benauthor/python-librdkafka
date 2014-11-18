@@ -40,12 +40,11 @@ def open(topic, partition, start_offset, default_timeout_ms=0):
             self.dead = False
 
         def __del__(self):
-            self.close()
+            if not self.dead:
+                self.close()
 
         def consume(self, timeout_ms=None):
-            if self.dead:
-                raise PartitionReaderException(
-                        "You called close() on this handle; get a fresh one.")
+            self._check_dead()
             msg = _lib.rd_kafka_consume(
                     topic.cdata, partition,
                     default_timeout_ms if timeout_ms is None else timeout_ms)
@@ -59,20 +58,31 @@ def open(topic, partition, start_offset, default_timeout_ms=0):
                 return msg # TODO wrap into class, for garbage-collection!
  
         def seek(self, offset):
-            self._close() # must throw KeyError if we called self.close()
+            self._check_dead()
+            self._close()
             _open(topic, partition, offset, default_timeout_ms)
         
         def close(self):
-            self.dead = True
-            self._close()
+            try:
+                self._close()
+            finally:
+                self.dead = True
 
         def _close(self):
-            # NB seek() relies on us using remove(), not discard():
+            self._check_dead() # don't clobber someone else's opened reader
             open_partitions.remove((topic, partition))
             rv = _lib.rd_kafka_consume_stop(topic.cdata, partition)
             if rv:
                 raise PartitionReaderException(
                     "rd_kafka_consume_stop({}, {}): ".format(topic, partition)
                     + _errno2str())
+
+        def _check_dead(self):
+            # TODO it's a design-smell that we're in trouble if we forget to
+            # call _check_dead(); probably we should copy topic and/or
+            # partition to self and set them None on close().
+            if self.dead:
+                raise PartitionReaderException(
+                        "You called close() on this handle; get a fresh one.")
 
     return Reader()
