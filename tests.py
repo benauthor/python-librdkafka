@@ -18,8 +18,7 @@ class PartitionReaderTestCase(unittest.TestCase):
         for _ in range(1000):
             t.produce(b"boohoohoo")
         # force flushing queues:
-        del t
-        del p
+        p.poll(100)
 
     def setUp(self):
         c = Consumer(self.config)

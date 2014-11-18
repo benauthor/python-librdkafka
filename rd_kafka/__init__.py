@@ -94,6 +94,9 @@ class KafkaHandle(object):
     def open_topic(self, name, topic_config):
         return self.topic_type(name, self, topic_config)
 
+    def poll(self, timeout_ms=0):
+        return _lib.rd_kafka_poll(self.cdata, timeout_ms)
+
 
 class ProducerTopic(BaseTopic):
 
@@ -121,7 +124,7 @@ class Producer(KafkaHandle):
         # flush the write queues:
         while _lib.rd_kafka_outq_len(self.cdata) > 0:
             # TODO make sure we can break out of here
-            _lib.rd_kafka_poll(self.cdata, 100)
+            self.poll(100)
         super(Producer, self).__del__()
 
 
