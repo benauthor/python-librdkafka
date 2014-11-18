@@ -8,6 +8,8 @@ docs, and as is obvious because it would mix up offsets of concurrent readers)
 import errno
 
 from headers import ffi as _ffi, lib as _lib
+from message import Message
+from utils import _mk_errstr, _err2str, _errno2str
 
 
 # TODO store topics by name, not object handle, to avoid circular refs:
@@ -54,8 +56,13 @@ def open(topic, partition, start_offset, default_timeout_ms=0):
                 elif _ffi.errno == errno.ENOENT:
                     raise PartitionReaderException(
                             "Cannot access '{}'/{}".format(topic, partition))
+            elif msg.err == _lib.RD_KAFKA_RESP_ERR_NO_ERROR:
+                return Message(msg)
+            elif msg.err == _lib.RD_KAFKA_RESP_ERR__PARTITION_EOF:
+                return None
             else:
-                return msg # TODO wrap into class, for garbage-collection!
+                # TODO we should inspect msg.payload here too
+                raise PartitionReaderException(_err2str(msg.err))
  
         def seek(self, offset):
             self._check_dead()

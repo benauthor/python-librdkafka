@@ -11,7 +11,8 @@ ffi.cdef(
     typedef ... rd_kafka_topic_t;
     typedef ... rd_kafka_conf_t;
     typedef ... rd_kafka_topic_conf_t;
-    typedef enum {RD_KAFKA_RESP_ERR_NO_ERROR, ...} rd_kafka_resp_err_t;
+    typedef enum {RD_KAFKA_RESP_ERR_NO_ERROR,
+                  RD_KAFKA_RESP_ERR__PARTITION_EOF, ...} rd_kafka_resp_err_t;
 
     const char *rd_kafka_err2str (rd_kafka_resp_err_t err);
     rd_kafka_resp_err_t rd_kafka_errno2err (int errnox);
