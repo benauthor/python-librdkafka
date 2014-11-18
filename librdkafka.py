@@ -299,8 +299,18 @@ class Metadata(object):
 
 
 class TopicPartition(object):
+    instances = {} # ensures unique instance for each (topic, partition) tuple
+
     def __init__(self, topic, partition, start_offset, default_timeout_ms=0):
-        """ For convenience, call ConsumerTopic.open_partition() instead """
+        """ NB: under librdkafka's design, where we are only allowed 1 call
+            to rd_kafka_consume_start() for every rd_kafka_consume_stop() (per
+            the docs, and also obviously because it would mess with the offsets
+            of concurrent readers, a TopicPartition is necessarily a singleton.
+        """
+        if (topic, partition) in TopicPartition.instances:
+            raise LibrdkafkaException("Use ConsumerTopic.open_partition().")
+        else:
+            TopicPartition.instances[topic, partition] = self
         self.topic = topic
         self.partition = partition
         self.timeout = default_timeout_ms
@@ -332,8 +342,12 @@ class ConsumerTopic(BaseTopic):
         self.readers = {} # {partition_id: PartitionReader() }
         super(ConsumerTopic, self).__init__(*args, **kwargs)
 
-    def open_partition(self, *args, **kwargs):
-        return TopicPartition(self, *args, **kwargs)
+    def open_partition(self, partition):
+        try:
+            return TopicPartition.instances[self, partition]
+        except KeyError:
+                       TopicPartition(self, partition,
+                                      start_offset, default_timeout_ms))
 
 
 class Consumer(KafkaHandle):
