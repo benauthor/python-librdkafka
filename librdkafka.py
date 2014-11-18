@@ -2,6 +2,7 @@ from copy import deepcopy
 import errno
 
 from headers import ffi as _ffi, lib as _lib
+import partition_reader
 
 
 def _mk_errstr():
@@ -178,56 +179,14 @@ class Metadata(object):
         _lib.rd_kafka_metadata_destroy(meta_dp[0])
 
 
-class TopicPartition(object):
-    instances = {} # ensures unique instance for each (topic, partition) tuple
-
-    def __init__(self, topic, partition, start_offset, default_timeout_ms=0):
-        """ NB: under librdkafka's design, where we are only allowed 1 call
-            to rd_kafka_consume_start() for every rd_kafka_consume_stop() (per
-            the docs, and also obviously because it would mess with the offsets
-            of concurrent readers, a TopicPartition is necessarily a singleton.
-        """
-        if (topic, partition) in TopicPartition.instances:
-            raise LibrdkafkaException("Use ConsumerTopic.open_partition().")
-        else:
-            TopicPartition.instances[topic, partition] = self
-        self.topic = topic
-        self.partition = partition
-        self.timeout = default_timeout_ms
-        rv = _lib.rd_kafka_consume_start(self.topic.cdata,
-                                         self.partition, start_offset)
-        if rv:
-            raise LibrdkafkaException(_errno2str())
-
-    def __del__(self):
-        rv = _lib.rd_kafka_consume_stop(self.topic.cdata, self.partition)
-        if rv:
-            raise LibrdkafkaException(_errno2str())
-
-    def consume(self, timeout_ms=None):
-        msg = _lib.rd_kafka_consume(
-                  self.topic.cdata, self.partition,
-                  self.timeout if timeout_ms is None else timeout_ms)
-        if msg == _ffi.NULL:
-            if _ffi.errno == errno.ETIMEDOUT:
-                return None
-            elif _ffi.errno == errno.ENOENT:
-                raise LibrdkafkaException("Topic/partition gone?!")
-        else:
-            return msg # TODO wrap into class, for garbage-collection!
-
-
 class ConsumerTopic(BaseTopic):
     def __init__(self, *args, **kwargs):
         self.readers = {} # {partition_id: PartitionReader() }
         super(ConsumerTopic, self).__init__(*args, **kwargs)
 
-    def open_partition(self, partition):
-        try:
-            return TopicPartition.instances[self, partition]
-        except KeyError:
-                       TopicPartition(self, partition,
-                                      start_offset, default_timeout_ms)
+    def open_partition(self, partition, start_offset, default_timeout_ms=0):
+        return partition_reader.open(
+                self, partition, start_offset, default_timeout_ms)
 
 
 class Consumer(KafkaHandle):

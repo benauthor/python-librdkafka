@@ -1,11 +1,12 @@
 import unittest
 
 from librdkafka import *
+from partition_reader import PartitionReaderException
 
 
 kafka_docker = "kafka0:9092" # TODO make portable (see fig.yml etc)
 
-class TopicPartitionTestCase(unittest.TestCase):
+class PartitionReaderTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.config = Config()
@@ -23,20 +24,28 @@ class TopicPartitionTestCase(unittest.TestCase):
     def setUp(self):
         c = Consumer(self.config)
         self.topic = c.open_topic("TopicPartitionTestCase", TopicConfig())
+        self.reader = self.topic.open_partition(
+                          partition=0, start_offset=0, default_timeout_ms=1000)
+
+    def test_seek(self):
+        msg = self.reader.consume()
+        self.assertEqual(0, msg.offset)
+        self.reader.seek(100)
+        msg = self.reader.consume()
+        self.assertEqual(100, msg.offset)
 
     def test_double_instantiations(self):
-        reader = self.topic.open_partition(partition=0, start_offset=0,
-                                           default_timeout_ms=1000)
-        msg = reader.consume()
-        self.assertEqual(0, msg.offset)
+        with self.assertRaises(PartitionReaderException):
+            second_reader = self.topic.open_partition(0, 0)
 
-        # a second reader on the same partition could create havoc:
-        reader2 = self.topic.open_partition(0, 0)
-        msg = reader.consume()
-        self.assertEqual(1, msg.offset)
-        del reader2
-        msg = reader.consume()
-        self.assertEqual(2, msg.offset)
+        self.reader.close()
+        second_reader = self.topic.open_partition(0, 0, 1000)
+        msg = second_reader.consume()
+        self.assertEqual(0, msg.offset)
+        # Now that second_reader has opened the partition again, reader should
+        # still refuse to read from it:
+        with self.assertRaises(PartitionReaderException):
+            msg = self.reader.consume()
 
 
 if __name__ == "__main__":
