@@ -1,7 +1,7 @@
 import unittest
 
-from librdkafka import *
-from partition_reader import PartitionReaderException
+from rd_kafka import *
+from rd_kafka.partition_reader import PartitionReaderException
 
 
 kafka_docker = "kafka0:9092" # TODO make portable (see fig.yml etc)
