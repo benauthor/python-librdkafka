@@ -180,9 +180,6 @@ class Metadata(object):
 
 
 class ConsumerTopic(BaseTopic):
-    def __init__(self, *args, **kwargs):
-        self.readers = {} # {partition_id: PartitionReader() }
-        super(ConsumerTopic, self).__init__(*args, **kwargs)
 
     def open_partition(self, partition, start_offset, default_timeout_ms=0):
         return partition_reader.open(
