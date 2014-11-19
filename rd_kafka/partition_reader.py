@@ -67,6 +67,7 @@ def open(topic, partition, start_offset):
             elif msg.err == _lib.RD_KAFKA_RESP_ERR_NO_ERROR:
                 return Message(msg)
             elif msg.err == _lib.RD_KAFKA_RESP_ERR__PARTITION_EOF:
+                # TODO maybe raise StopIteration to distinguish from ETIMEDOUT?
                 return None
             else:
                 # TODO we should inspect msg.payload here too
@@ -76,6 +77,8 @@ def open(topic, partition, start_offset):
             self._check_dead()
             self._close()
             _open(topic, partition, offset)
+            # Hack that seems to prevent ETIMEDOUT on next consume() call:
+            topic._kafka_handle.poll(50)
         
         def close(self):
             try:

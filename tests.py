@@ -54,7 +54,7 @@ class PartitionReaderTestCase(unittest.TestCase):
         self.assertIsNone(r.consume())
 
         r.seek(-1)
-        offset_e = r.consume(1500).offset # FIXME default timeout doesn't work!
+        offset_e = r.consume().offset
         self.assertIsNone(r.consume())
 
         r.seek(-10)
