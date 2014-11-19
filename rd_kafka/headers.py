@@ -60,6 +60,7 @@ ffi.cdef(
     rd_kafka_topic_t *rd_kafka_topic_new (rd_kafka_t *rk, const char *topic,
                                           rd_kafka_topic_conf_t *conf);
     void rd_kafka_topic_destroy (rd_kafka_topic_t *rkt);
+    const char *rd_kafka_topic_name (const rd_kafka_topic_t *rkt);
 
     #define RD_KAFKA_PARTITION_UA ...
     #define RD_KAFKA_OFFSET_BEGINNING ...

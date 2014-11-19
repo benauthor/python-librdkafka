@@ -75,6 +75,10 @@ class BaseTopic(object):
     def __del__(self):
         _lib.rd_kafka_topic_destroy(self.cdata)
 
+    @property
+    def name(self):
+        return _ffi.string(_lib.rd_kafka_topic_name(self.cdata))
+
 
 class KafkaHandle(object):
     topic_type = BaseTopic
