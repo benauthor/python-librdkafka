@@ -23,7 +23,20 @@ class PartitionReaderException(Exception):
 def _open(topic, partition, start_offset, default_timeout_ms):
     key = topic, partition
     if key in open_partitions:
-        raise PartitionReaderException("Partition {} open elsewhere!".format(key))
+        raise PartitionReaderException(
+            "Partition {} open elsewhere!".format(key))
+
+    # Handle magic offsets:
+    if start_offset < 0:
+        # we require strings for these to avoid anyone trying otherwise
+        # intuitive things like start_offset=(RD_KAFKA_OFFSET_BEGINNING + 1)
+        raise PartitionReaderException(
+            "Please provide special offsets as strings: 'beginning'/'end'.")
+    if start_offset == 'beginning':
+        start_offset = _lib.RD_KAFKA_OFFSET_BEGINNING
+    if start_offset == 'end':
+        start_offset = _lib.RD_KAFKA_OFFSET_END
+
     rv = _lib.rd_kafka_consume_start(topic.cdata, partition, start_offset)
     if rv:
         raise PartitionReaderException("rd_kafka_consume_start: " + _errno2str())

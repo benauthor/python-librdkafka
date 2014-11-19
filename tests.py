@@ -46,6 +46,15 @@ class PartitionReaderTestCase(unittest.TestCase):
         with self.assertRaises(PartitionReaderException):
             msg = self.reader.consume()
 
+    def test_magic_offsets(self):
+        self.reader.close()
+        with self.assertRaises(PartitionReaderException):
+            r = self.topic.open_partition(0, start_offset=-2)
+        r = self.topic.open_partition(0, start_offset="beginning")
+        offset_b = r.consume().offset
+        r.seek("end")
+        offset_e = r.consume().offset
+        self.assertTrue(offset_e - offset_b >= 1000)
 
 if __name__ == "__main__":
     unittest.main()
