@@ -169,9 +169,11 @@ class Metadata(object):
 
 
 class ConsumerTopic(BaseTopic):
+    OFFSET_BEGINNING = partition_reader.OFFSET_BEGINNING
+    OFFSET_END = partition_reader.OFFSET_END
 
     def open_partition(self, partition, start_offset):
-        return partition_reader.open(self, partition, start_offset)
+        return partition_reader.open_partition(self, partition, start_offset)
 
 
 class Consumer(KafkaHandle):

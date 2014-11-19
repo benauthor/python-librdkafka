@@ -47,10 +47,10 @@ class PartitionReaderTestCase(unittest.TestCase):
 
     def test_magic_offsets(self):
         self.reader.close()
-        r = self.topic.open_partition(0, "beginning")
+        r = self.topic.open_partition(0, self.topic.OFFSET_BEGINNING)
         self.assertIsNotNone(r.consume().offset)
 
-        r.seek("end")
+        r.seek(r.OFFSET_END)
         self.assertIsNone(r.consume())
 
         r.seek(-1)

@@ -15,20 +15,24 @@ from utils import _mk_errstr, _err2str, _errno2str
 # TODO store topics by name, not object handle, to avoid circular refs:
 open_partitions = set() # partitions that have been "started" in rd_kafka
 
+# NB these must be str, not int:
+OFFSET_BEGINNING = 'beginning'
+OFFSET_END = 'end'
+
 
 class PartitionReaderException(Exception):
     pass
 
 
-def _open(topic, partition, start_offset):
+def _open_partition(topic, partition, start_offset):
     key = topic, partition
     if key in open_partitions:
         raise PartitionReaderException(
             "Partition {} open elsewhere!".format(key))
 
-    if start_offset == 'beginning':
+    if start_offset == OFFSET_BEGINNING:
         start_offset = _lib.RD_KAFKA_OFFSET_BEGINNING
-    elif start_offset == 'end':
+    elif start_offset == OFFSET_END:
         start_offset = _lib.RD_KAFKA_OFFSET_END
     elif start_offset < 0:
         # pythonistas expect this to be relative to end
@@ -40,12 +44,15 @@ def _open(topic, partition, start_offset):
     open_partitions.add(key)
 
 
-def open(topic, partition, start_offset):
+def open_partition(topic, partition, start_offset):
     """ """
-    _open(topic, partition, start_offset)
+    _open_partition(topic, partition, start_offset)
 
     class Reader(object):
-        """ """
+        # exporting for convenience:
+        OFFSET_BEGINNING = OFFSET_BEGINNING
+        OFFSET_END = OFFSET_END
+
         def __init__(self):
             # we mustn't reuse this instance after calling self.close(), as
             # someone else might be reading at that point:
@@ -76,7 +83,7 @@ def open(topic, partition, start_offset):
         def seek(self, offset):
             self._check_dead()
             self._close()
-            _open(topic, partition, offset)
+            _open_partition(topic, partition, offset)
             # Hack that seems to prevent ETIMEDOUT on next consume() call:
             topic._kafka_handle.poll(50)
         
