@@ -15,27 +15,44 @@ from utils import _mk_errstr, _err2str, _errno2str
 # TODO store topics by name, not object handle, to avoid circular refs:
 open_partitions = set() # partitions that have been "started" in rd_kafka
 
+# NB these must be str, not int:
+OFFSET_BEGINNING = 'beginning'
+OFFSET_END = 'end'
+
 
 class PartitionReaderException(Exception):
     pass
 
 
-def _open(topic, partition, start_offset, default_timeout_ms):
+def _open_partition(topic, partition, start_offset):
     key = topic, partition
     if key in open_partitions:
-        raise PartitionReaderException("Partition {} open elsewhere!".format(key))
+        raise PartitionReaderException(
+            "Partition {} open elsewhere!".format(key))
+
+    if start_offset == OFFSET_BEGINNING:
+        start_offset = _lib.RD_KAFKA_OFFSET_BEGINNING
+    elif start_offset == OFFSET_END:
+        start_offset = _lib.RD_KAFKA_OFFSET_END
+    elif start_offset < 0:
+        # pythonistas expect this to be relative to end
+        start_offset += _lib.RD_KAFKA_OFFSET_TAIL_BASE
+
     rv = _lib.rd_kafka_consume_start(topic.cdata, partition, start_offset)
     if rv:
         raise PartitionReaderException("rd_kafka_consume_start: " + _errno2str())
     open_partitions.add(key)
 
 
-def open(topic, partition, start_offset, default_timeout_ms=0):
+def open_partition(topic, partition, start_offset):
     """ """
-    _open(topic, partition, start_offset, default_timeout_ms)
+    _open_partition(topic, partition, start_offset)
 
     class Reader(object):
-        """ """
+        # exporting for convenience:
+        OFFSET_BEGINNING = OFFSET_BEGINNING
+        OFFSET_END = OFFSET_END
+
         def __init__(self):
             # we mustn't reuse this instance after calling self.close(), as
             # someone else might be reading at that point:
@@ -45,11 +62,9 @@ def open(topic, partition, start_offset, default_timeout_ms=0):
             if not self.dead:
                 self.close()
 
-        def consume(self, timeout_ms=None):
+        def consume(self, timeout_ms=1000):
             self._check_dead()
-            msg = _lib.rd_kafka_consume(
-                    topic.cdata, partition,
-                    default_timeout_ms if timeout_ms is None else timeout_ms)
+            msg = _lib.rd_kafka_consume(topic.cdata, partition, timeout_ms)
             if msg == _ffi.NULL:
                 if _ffi.errno == errno.ETIMEDOUT:
                     return None
@@ -59,6 +74,7 @@ def open(topic, partition, start_offset, default_timeout_ms=0):
             elif msg.err == _lib.RD_KAFKA_RESP_ERR_NO_ERROR:
                 return Message(msg)
             elif msg.err == _lib.RD_KAFKA_RESP_ERR__PARTITION_EOF:
+                # TODO maybe raise StopIteration to distinguish from ETIMEDOUT?
                 return None
             else:
                 # TODO we should inspect msg.payload here too
@@ -67,7 +83,9 @@ def open(topic, partition, start_offset, default_timeout_ms=0):
         def seek(self, offset):
             self._check_dead()
             self._close()
-            _open(topic, partition, offset, default_timeout_ms)
+            _open_partition(topic, partition, offset)
+            # Hack that seems to prevent ETIMEDOUT on next consume() call:
+            topic._kafka_handle.poll(50)
         
         def close(self):
             try:

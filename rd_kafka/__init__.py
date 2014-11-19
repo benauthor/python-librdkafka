@@ -94,7 +94,7 @@ class KafkaHandle(object):
     def open_topic(self, name, topic_config):
         return self.topic_type(name, self, topic_config)
 
-    def poll(self, timeout_ms=0):
+    def poll(self, timeout_ms=1000):
         return _lib.rd_kafka_poll(self.cdata, timeout_ms)
 
 
@@ -169,10 +169,11 @@ class Metadata(object):
 
 
 class ConsumerTopic(BaseTopic):
+    OFFSET_BEGINNING = partition_reader.OFFSET_BEGINNING
+    OFFSET_END = partition_reader.OFFSET_END
 
-    def open_partition(self, partition, start_offset, default_timeout_ms=0):
-        return partition_reader.open(
-                self, partition, start_offset, default_timeout_ms)
+    def open_partition(self, partition, start_offset):
+        return partition_reader.open_partition(self, partition, start_offset)
 
 
 class Consumer(KafkaHandle):

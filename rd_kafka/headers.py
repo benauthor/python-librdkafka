@@ -62,6 +62,9 @@ ffi.cdef(
     void rd_kafka_topic_destroy (rd_kafka_topic_t *rkt);
 
     #define RD_KAFKA_PARTITION_UA ...
+    #define RD_KAFKA_OFFSET_BEGINNING ...
+    #define RD_KAFKA_OFFSET_END ...
+    #define RD_KAFKA_OFFSET_TAIL_BASE ... /* internal: do not use */
 
     int rd_kafka_consume_start (rd_kafka_topic_t *rkt, int32_t partition,
                                 int64_t offset);

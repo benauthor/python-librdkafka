@@ -23,8 +23,7 @@ class PartitionReaderTestCase(unittest.TestCase):
     def setUp(self):
         c = Consumer(self.config)
         self.topic = c.open_topic("TopicPartitionTestCase", TopicConfig())
-        self.reader = self.topic.open_partition(
-                          partition=0, start_offset=0, default_timeout_ms=1000)
+        self.reader = self.topic.open_partition(0, start_offset=0)
 
     def test_seek(self):
         msg = self.reader.consume()
@@ -38,7 +37,7 @@ class PartitionReaderTestCase(unittest.TestCase):
             second_reader = self.topic.open_partition(0, 0)
 
         self.reader.close()
-        second_reader = self.topic.open_partition(0, 0, 1000)
+        second_reader = self.topic.open_partition(0, 0)
         msg = second_reader.consume()
         self.assertEqual(0, msg.offset)
         # Now that second_reader has opened the partition again, reader should
@@ -46,6 +45,20 @@ class PartitionReaderTestCase(unittest.TestCase):
         with self.assertRaises(PartitionReaderException):
             msg = self.reader.consume()
 
+    def test_magic_offsets(self):
+        self.reader.close()
+        r = self.topic.open_partition(0, self.topic.OFFSET_BEGINNING)
+        self.assertIsNotNone(r.consume().offset)
+
+        r.seek(r.OFFSET_END)
+        self.assertIsNone(r.consume())
+
+        r.seek(-1)
+        offset_e = r.consume().offset
+        self.assertIsNone(r.consume())
+
+        r.seek(-10)
+        self.assertEqual(offset_e - r.consume().offset, 9)
 
 if __name__ == "__main__":
     unittest.main()
