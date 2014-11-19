@@ -42,6 +42,9 @@ def _open_partition(topic, partition, start_offset):
     if rv:
         raise PartitionReaderException("rd_kafka_consume_start: " + _errno2str())
     open_partitions.add(key)
+    # FIXME we use the following hack to prevent ETIMEDOUT on a consume()
+    # call that comes too soon after rd_kafka_consume_start().  Slow!
+    topic._kafka_handle.poll()
 
 
 def open_partition(topic, partition, start_offset):
@@ -84,9 +87,7 @@ def open_partition(topic, partition, start_offset):
             self._check_dead()
             self._close()
             _open_partition(topic, partition, offset)
-            # Hack that seems to prevent ETIMEDOUT on next consume() call:
-            topic._kafka_handle.poll(50)
-        
+
         def close(self):
             try:
                 self._close()
