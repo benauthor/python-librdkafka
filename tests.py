@@ -47,12 +47,18 @@ class PartitionReaderTestCase(unittest.TestCase):
 
     def test_magic_offsets(self):
         self.reader.close()
-        with self.assertRaises(PartitionReaderException):
-            r = self.topic.open_partition(0, start_offset=-2)
         r = self.topic.open_partition(0, "beginning")
-        offset_b = r.consume().offset
+        self.assertIsNotNone(r.consume().offset)
+
         r.seek("end")
         self.assertIsNone(r.consume())
+
+        r.seek(-1)
+        offset_e = r.consume(1500).offset # FIXME default timeout doesn't work!
+        self.assertIsNone(r.consume())
+
+        r.seek(-10)
+        self.assertEqual(offset_e - r.consume().offset, 9)
 
 if __name__ == "__main__":
     unittest.main()

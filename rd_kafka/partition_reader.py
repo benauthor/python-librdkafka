@@ -26,16 +26,13 @@ def _open(topic, partition, start_offset):
         raise PartitionReaderException(
             "Partition {} open elsewhere!".format(key))
 
-    # Handle magic offsets:
-    if start_offset < 0:
-        # we require strings for these to avoid anyone trying otherwise
-        # intuitive things like start_offset=(RD_KAFKA_OFFSET_BEGINNING + 1)
-        raise PartitionReaderException(
-            "Please provide special offsets as strings: 'beginning'/'end'.")
     if start_offset == 'beginning':
         start_offset = _lib.RD_KAFKA_OFFSET_BEGINNING
-    if start_offset == 'end':
+    elif start_offset == 'end':
         start_offset = _lib.RD_KAFKA_OFFSET_END
+    elif start_offset < 0:
+        # pythonistas expect this to be relative to end
+        start_offset += _lib.RD_KAFKA_OFFSET_TAIL_BASE
 
     rv = _lib.rd_kafka_consume_start(topic.cdata, partition, start_offset)
     if rv:
