@@ -72,6 +72,10 @@ ffi.cdef(
     int rd_kafka_consume_stop (rd_kafka_topic_t *rkt, int32_t partition);
     rd_kafka_message_t *rd_kafka_consume (rd_kafka_topic_t *rkt,
                                           int32_t partition, int timeout_ms);
+    ssize_t rd_kafka_consume_batch (rd_kafka_topic_t *rkt, int32_t partition,
+                                    int timeout_ms,
+                                    rd_kafka_message_t **rkmessages,
+                                    size_t rkmessages_size);
 
     #define RD_KAFKA_MSG_F_COPY ...
 

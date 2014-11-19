@@ -83,6 +83,18 @@ def open_partition(topic, partition, start_offset):
                 # TODO we should inspect msg.payload here too
                 raise PartitionReaderException(_err2str(msg.err))
  
+        def consume_batch(self, max_messages, timeout_ms=1000):
+            self._check_dead()
+            msg_array = _ffi.new('rd_kafka_message_t* []', max_messages)
+            n_out = _lib.rd_kafka_consume_batch(
+                    topic.cdata, partition, timeout_ms, msg_array, max_messages)
+            if n_out == -1:
+                raise PartitionReaderException(_errno2str())
+            else:
+                # TODO filter out error messages; eg. sometimes the last
+                # message has no payload, but error flag 'No more messages'
+                return map(Message, msg_array[0:n_out])
+
         def seek(self, offset):
             self._check_dead()
             self._close()
