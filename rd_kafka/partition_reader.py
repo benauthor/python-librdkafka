@@ -20,7 +20,7 @@ class PartitionReaderException(Exception):
     pass
 
 
-def _open(topic, partition, start_offset, default_timeout_ms):
+def _open(topic, partition, start_offset):
     key = topic, partition
     if key in open_partitions:
         raise PartitionReaderException(
@@ -43,9 +43,9 @@ def _open(topic, partition, start_offset, default_timeout_ms):
     open_partitions.add(key)
 
 
-def open(topic, partition, start_offset, default_timeout_ms=0):
+def open(topic, partition, start_offset):
     """ """
-    _open(topic, partition, start_offset, default_timeout_ms)
+    _open(topic, partition, start_offset)
 
     class Reader(object):
         """ """
@@ -58,11 +58,9 @@ def open(topic, partition, start_offset, default_timeout_ms=0):
             if not self.dead:
                 self.close()
 
-        def consume(self, timeout_ms=None):
+        def consume(self, timeout_ms=1000):
             self._check_dead()
-            msg = _lib.rd_kafka_consume(
-                    topic.cdata, partition,
-                    default_timeout_ms if timeout_ms is None else timeout_ms)
+            msg = _lib.rd_kafka_consume(topic.cdata, partition, timeout_ms)
             if msg == _ffi.NULL:
                 if _ffi.errno == errno.ETIMEDOUT:
                     return None
@@ -80,7 +78,7 @@ def open(topic, partition, start_offset, default_timeout_ms=0):
         def seek(self, offset):
             self._check_dead()
             self._close()
-            _open(topic, partition, offset, default_timeout_ms)
+            _open(topic, partition, offset)
         
         def close(self):
             try:
