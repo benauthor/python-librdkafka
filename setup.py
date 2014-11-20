@@ -1,6 +1,11 @@
 from setuptools import setup, find_packages
 
-import rd_kafka.headers
+try:
+    import rd_kafka.headers
+    ext_modules = [rd_kafka.headers.ffi.verifier.get_extension()]
+    # TODO include librdkafka itself for bdist?
+except ImportError:
+    ext_modules = []
 
 
 setup(
@@ -13,8 +18,7 @@ setup(
 
     packages=find_packages(exclude=["tests"]),
     install_requires=["cffi>=0.8.6"],
-    ext_modules=[rd_kafka.headers.ffi.verifier.get_extension()],
+    ext_modules=ext_modules,
     zip_safe=False, # for cffi extension
-    # TODO include librdkafka itself for bdist?
     )
 
