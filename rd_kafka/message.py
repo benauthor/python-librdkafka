@@ -1,8 +1,5 @@
 from headers import ffi as _ffi, lib as _lib
-
-
-def _voidp2bytes(cdata, length):
-    return _ffi.buffer(_ffi.cast('const char *', cdata), length)
+from utils import _voidp2bytes
 
 
 class Message(object):

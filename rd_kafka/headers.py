@@ -52,6 +52,17 @@ ffi.cdef(
                                                  const char *value,
                                                  char *errstr,
                                                  size_t errstr_size);
+    void rd_kafka_topic_conf_set_partitioner_cb (
+                rd_kafka_topic_conf_t *topic_conf,
+                int32_t (*partitioner) (
+                    const rd_kafka_topic_t *rkt,
+                    const void *keydata,
+                    size_t keylen,
+                    int32_t partition_cnt,
+                    void *rkt_opaque,
+                    void *msg_opaque));
+    int rd_kafka_topic_partition_available (const rd_kafka_topic_t *rkt,
+                                            int32_t partition);
 
     rd_kafka_t *rd_kafka_new (rd_kafka_type_t type, rd_kafka_conf_t *conf,
                               char *errstr, size_t errstr_size);

@@ -1,9 +1,14 @@
 from copy import deepcopy
 import errno
+import logging
 
 from headers import ffi as _ffi, lib as _lib
 import partition_reader
-from utils import _mk_errstr, _err2str, _errno2str
+from utils import _mk_errstr, _err2str, _errno2str, _voidp2bytes
+
+
+logger = logging.getLogger(__name__)
+callback_funcs = [] # we need some place to keep our cffi callbacks alive
 
 
 class LibrdkafkaException(Exception):
@@ -54,10 +59,39 @@ class TopicConfig(object):
     def set(self, name, value):
         # TODO accept dr_msg_cb, log_cb, etc
         errstr = _mk_errstr()
+        if name == "partitioner":
+            return self.set_partitioner_cb(value)
         res = _lib.rd_kafka_topic_conf_set(
                   self.cdata, name, value, errstr, len(errstr))
         if res != _lib.RD_KAFKA_CONF_OK:
             raise LibrdkafkaException(_ffi.string(errstr))
+
+    def set_partitioner_cb(self, callback_func):
+        """
+        Python callback to partition messages
+
+        Set a python callback_func with signature
+            'key_string, partitions_available_list => item'
+        where item is selected from partition_list, or None if the function
+        couldn't decide a partition.
+        """
+        @_ffi.callback("int32_t (const rd_kafka_topic_t *, const void *,"
+                       "         size_t, int32_t, void *, void *)")
+        def func(topic, key, key_len, partition_cnt, t_opaque, m_opaque):
+            key = _voidp2bytes(key, key_len)[:]
+            partition_list = range(partition_cnt)
+            while partition_list:
+                p = callback_func(key, partition_list)
+                if (p is None or
+                        _lib.rd_kafka_topic_partition_available(topic, p)):
+                    break
+                else:
+                    partition_list.remove(p)
+                    p = None
+            return _lib.RD_KAFKA_PARTITION_UA if p is None else p
+
+        callback_funcs.append(func) # prevent garbage-collection of func
+        _lib.rd_kafka_topic_conf_set_partitioner_cb(self.cdata, func)
 
 
 class BaseTopic(object):

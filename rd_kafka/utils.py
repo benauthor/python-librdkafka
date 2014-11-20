@@ -16,4 +16,5 @@ def _errno2str(errno=None):
     return _err2str(_lib.rd_kafka_errno2err(errno))
 
 
-
+def _voidp2bytes(cdata, length):
+    return _ffi.buffer(_ffi.cast('const char *', cdata), length)

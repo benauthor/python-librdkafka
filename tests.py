@@ -1,3 +1,4 @@
+import random
 import unittest
 
 from rd_kafka import *
@@ -5,6 +6,7 @@ from rd_kafka.partition_reader import PartitionReaderException
 
 
 kafka_docker = "kafka0:9092" # TODO make portable (see fig.yml etc)
+
 
 class PartitionReaderTestCase(unittest.TestCase):
     @classmethod
@@ -59,6 +61,37 @@ class PartitionReaderTestCase(unittest.TestCase):
 
         r.seek(-10)
         self.assertEqual(offset_e - r.consume().offset, 9)
+
+
+class TopicConfigTestCase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.config = Config()
+        cls.config.set("metadata.broker.list", kafka_docker)
+        cls.producer = Producer(cls.config)
+
+    def test_set_partitioner_cb(self):
+        test_key = "test_key"
+        n_msgs = 1000
+        call_counter = [0]
+
+        def count_callbacks(key, part_list):
+            call_counter[0] += 1
+            self.assertEqual(key, test_key)
+            # try special return-value None a few times, too:
+            return random.choice(part_list) if call_counter[0] % 20 else None
+
+        tc = TopicConfig()
+        tc.set("partitioner", count_callbacks)
+        t = self.producer.open_topic("test_set_partitioner_cb", tc)
+
+        for _ in range(n_msgs):
+            t.produce(b"partition me", key=test_key)
+        self.producer.poll(2000)
+        # ^^ We only need more time here when count_callbacks() is made to
+        # return None sometimes - that makes sense I suppose.
+        self.assertGreaterEqual(call_counter[0], n_msgs)
+
 
 if __name__ == "__main__":
     unittest.main()
