@@ -95,6 +95,29 @@ def open_partition(topic, partition, start_offset):
                 # message has no payload, but error flag 'No more messages'
                 return map(Message, msg_array[0:n_out])
 
+        def consume_callback(self, callback_func, opaque=None, timeout_ms=1000):
+            """
+            Execute callback function on consumed messages
+
+            The callback function should accept two args: a message.Message,
+            and any python object you wish to pass in the 'opaque' above.
+            After timeout_ms, return the number of messages consumed.
+            """
+            self._check_dead()
+            opaque_p = _ffi.new_handle(opaque)
+
+            @_ffi.callback('void (rd_kafka_message_t *, void *)')
+            def func(msg, opaque):
+                callback_func(Message(msg, manage_memory=False),
+                              _ffi.from_handle(opaque))
+
+            n_out = _lib.rd_kafka_consume_callback(
+                    topic.cdata, partition, timeout_ms, func, opaque_p)
+            if n_out == -1:
+                raise PartitionReaderException(_errno2str())
+            else:
+                return n_out
+
         def seek(self, offset):
             self._check_dead()
             self._close()

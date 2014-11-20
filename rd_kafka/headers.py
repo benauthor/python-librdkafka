@@ -76,6 +76,12 @@ ffi.cdef(
                                     int timeout_ms,
                                     rd_kafka_message_t **rkmessages,
                                     size_t rkmessages_size);
+    int rd_kafka_consume_callback (rd_kafka_topic_t *rkt, int32_t partition,
+                                   int timeout_ms,
+                                   void (*consume_cb) (
+                                           rd_kafka_message_t *rkmessage,
+                                           void *opaque),
+                                   void *opaque);
 
     #define RD_KAFKA_MSG_F_COPY ...
 
