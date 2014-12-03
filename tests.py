@@ -63,6 +63,35 @@ class PartitionReaderTestCase(unittest.TestCase):
         self.assertEqual(offset_e - r.consume().offset, 9)
 
 
+class ConfigTestCase(unittest.TestCase):
+    @classmethod
+    def setUp(self):
+        self.config = Config()
+        self.config.set("metadata.broker.list", kafka_docker)
+
+    def test_set_dr_msg_cb(self):
+        n_msgs = 1000
+        msg_payload = b"hello world!"
+        call_counter = [0]
+
+        def count_callbacks(msg, **kwargs):
+            self.assertEqual(bytes(msg.payload), msg_payload)
+            call_counter[0] += 1
+
+        self.config.set("dr_msg_cb", count_callbacks)
+        producer = Producer(self.config)
+        tc = TopicConfig()
+        t = producer.open_topic("test_set_dr_msg_cb", tc)
+
+        for _ in range(n_msgs):
+            t.produce(msg_payload)
+        n_polls = 0
+        while call_counter[0] != n_msgs and n_polls < 10:
+            producer.poll()
+            n_polls += 1
+        self.assertEqual(call_counter[0], n_msgs)
+
+
 class TopicConfigTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

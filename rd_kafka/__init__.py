@@ -3,12 +3,13 @@ import errno
 import logging
 
 from headers import ffi as _ffi, lib as _lib
+from message import Message
 import partition_reader
 from utils import _mk_errstr, _err2str, _errno2str, _voidp2bytes
 
 
 logger = logging.getLogger(__name__)
-callback_funcs = [] # we need some place to keep our cffi callbacks alive
+callback_funcs = [] # TODO need a better place to keep our cffi callbacks alive
 
 
 class LibrdkafkaException(Exception):
@@ -34,10 +35,35 @@ class Config(object):
 
     def set(self, name, value):
         errstr = _mk_errstr()
+        if name == "dr_cb":
+            raise NotImplementedError("Try dr_msg_cb instead?")
+        if name == "dr_msg_cb":
+            return self.set_dr_msg_cb(value)
         res = _lib.rd_kafka_conf_set(
                   self.cdata, name, value, errstr, len(errstr))
         if res != _lib.RD_KAFKA_CONF_OK:
             raise LibrdkafkaException(_ffi.string(errstr))
+
+    def set_dr_msg_cb(self, callback_func):
+        """
+        Set python callback to accept delivery reports
+
+        Pass a callback_func with signature f(msg, **kwargs), where msg will be
+        a message.Message and kwargs is currently empty (but should eventually
+        provide the KafkaHandle and the configured opaque handle)
+        """
+        @_ffi.callback("void (rd_kafka_t *,"
+                       "      const rd_kafka_message_t *, void *)")
+        def func(kafka_handle, msg, opaque):
+            # XXX modify KafkaHandle so we can wrap it here and pass it on?
+            msg = Message(msg, manage_memory=False)
+            callback_func(msg, opaque=None)
+            # TODO the above should become opaque=_ffi.from_handle(opaque) but
+            # this requires that we always configure the opaque (eg. set it to
+            # None by default)
+
+        callback_funcs.append(func) # prevent garbage-collection of func
+        _lib.rd_kafka_conf_set_dr_msg_cb(self.cdata, func)
 
 
 class TopicConfig(object):
@@ -57,7 +83,6 @@ class TopicConfig(object):
             _lib.rd_kafka_topic_conf_destroy(self.cdata)
 
     def set(self, name, value):
-        # TODO accept dr_msg_cb, log_cb, etc
         errstr = _mk_errstr()
         if name == "partitioner":
             return self.set_partitioner_cb(value)
