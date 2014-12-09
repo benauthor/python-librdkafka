@@ -24,7 +24,7 @@ class PartitionReaderException(Exception):
     pass
 
 
-def _open_partition(topic, partition, start_offset):
+def _open_partition(queue, topic, partition, start_offset):
     key = topic, partition
     if key in open_partitions:
         raise PartitionReaderException(
@@ -38,18 +38,21 @@ def _open_partition(topic, partition, start_offset):
         # pythonistas expect this to be relative to end
         start_offset += _lib.RD_KAFKA_OFFSET_TAIL_BASE
 
-    rv = _lib.rd_kafka_consume_start(topic.cdata, partition, start_offset)
+    rv = _lib.rd_kafka_consume_start_queue(
+            topic.cdata, partition, start_offset, queue)
     if rv:
-        raise PartitionReaderException("rd_kafka_consume_start: " + _errno2str())
+        raise PartitionReaderException(
+                "rd_kafka_consume_start_queue: " + _errno2str())
     open_partitions.add(key)
     # FIXME we use the following hack to prevent ETIMEDOUT on a consume()
     # call that comes too soon after rd_kafka_consume_start().  Slow!
-    topic._kafka_handle.poll()
+    topic.kafka_handle.poll()
 
 
 def open_partition(topic, partition, start_offset):
     """ """
-    _open_partition(topic, partition, start_offset)
+    queue_cdata = _lib.rd_kafka_queue_new(topic.kafka_handle.cdata)
+    _open_partition(queue_cdata, topic, partition, start_offset)
 
     class Reader(object):
         # exporting for convenience:
@@ -57,6 +60,7 @@ def open_partition(topic, partition, start_offset):
         OFFSET_END = OFFSET_END
 
         def __init__(self):
+            self.cdata = queue_cdata
             # we mustn't reuse this instance after calling self.close(), as
             # someone else might be reading at that point:
             self.dead = False
@@ -67,7 +71,7 @@ def open_partition(topic, partition, start_offset):
 
         def consume(self, timeout_ms=1000):
             self._check_dead()
-            msg = _lib.rd_kafka_consume(topic.cdata, partition, timeout_ms)
+            msg = _lib.rd_kafka_consume_queue(self.cdata, timeout_ms)
             if msg == _ffi.NULL:
                 if _ffi.errno == errno.ETIMEDOUT:
                     return None
@@ -86,8 +90,8 @@ def open_partition(topic, partition, start_offset):
         def consume_batch(self, max_messages, timeout_ms=1000):
             self._check_dead()
             msg_array = _ffi.new('rd_kafka_message_t* []', max_messages)
-            n_out = _lib.rd_kafka_consume_batch(
-                    topic.cdata, partition, timeout_ms, msg_array, max_messages)
+            n_out = _lib.rd_kafka_consume_batch_queue(
+                        self.cdata, timeout_ms, msg_array, max_messages)
             if n_out == -1:
                 raise PartitionReaderException(_errno2str())
             else:
@@ -111,8 +115,8 @@ def open_partition(topic, partition, start_offset):
                 callback_func(Message(msg, manage_memory=False),
                               _ffi.from_handle(opaque))
 
-            n_out = _lib.rd_kafka_consume_callback(
-                    topic.cdata, partition, timeout_ms, func, opaque_p)
+            n_out = _lib.rd_kafka_consume_callback_queue(
+                        self.cdata, timeout_ms, func, opaque_p)
             if n_out == -1:
                 raise PartitionReaderException(_errno2str())
             else:
@@ -122,6 +126,7 @@ def open_partition(topic, partition, start_offset):
             try:
                 self._close()
             finally:
+                _lib.rd_kafka_queue_destroy(self.cdata)
                 self.dead = True
 
         def _close(self):

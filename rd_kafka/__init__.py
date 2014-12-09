@@ -129,12 +129,11 @@ class TopicConfig(object):
 
 class BaseTopic(object):
     def __init__(self, name, kafka_handle, topic_config):
-        # prevent handle getting garbage-collected for the life of this Topic:
-        self._kafka_handle = kafka_handle # TODO obsolete
+        self.kafka_handle = kafka_handle
 
         cfg = deepcopy(topic_config) # next call would free topic_config.cdata
         self.cdata = _lib.rd_kafka_topic_new(
-                         self._kafka_handle.cdata, name, cfg.cdata)
+                         self.kafka_handle.cdata, name, cfg.cdata)
         cfg.cdata = None # prevent double-free in cfg.__del__()
         if self.cdata == _ffi.NULL:
             raise LibrdkafkaException(_errno2str())
