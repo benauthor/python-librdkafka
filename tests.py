@@ -132,7 +132,7 @@ class MsgOpaquesTestCase(unittest.TestCase):
 
         cls.msg_opaques = defaultdict(int)
         def dr_msg_cb(msg, **kwargs):
-            cls.msg_opaques[msg.opaque] += 1
+            cls.msg_opaques[id(msg.opaque)] += 1
         cls.config.set("dr_msg_cb", dr_msg_cb)
 
         cls.producer = Producer(cls.config)
@@ -146,11 +146,11 @@ class MsgOpaquesTestCase(unittest.TestCase):
         """ Assert we can safely 'dereference' msg_opaque=None """
         self.topic.produce(b"yoyoyo", msg_opaque=None)
         self.producer.poll()
-        self.assertEqual(1, self.msg_opaques[None])
+        self.assertEqual(1, self.msg_opaques[id(None)])
 
     def test_msg_opaque_multiple(self):
         """ Assert we can pass the same object with multiple messages """
-        objs = [object(), object(), object()]
+        objs = [0, 1, [], None, object(), object(), object()]
         n = 5
         for i in range(n):
             for o in objs:
@@ -158,7 +158,7 @@ class MsgOpaquesTestCase(unittest.TestCase):
         while sum(self.msg_opaques.values()) < n * len(objs):
             self.producer.poll()
         for o in objs:
-            self.assertEqual(n, self.msg_opaques[o])
+            self.assertEqual(n, self.msg_opaques[id(o)])
 
 
 if __name__ == "__main__":

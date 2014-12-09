@@ -174,7 +174,7 @@ class ProducerTopic(BaseTopic):
     def produce(self, payload, key=None,
                 partition=_lib.RD_KAFKA_PARTITION_UA, msg_opaque=None):
         key = key or _ffi.NULL
-        msg_opaque = _msg_opaques.new_handle(msg_opaque)
+        msg_opaque = _msg_opaques.get_handle(msg_opaque)
         rv = _lib.rd_kafka_produce(
                  self.cdata, partition, _lib.RD_KAFKA_MSG_F_COPY,
                  payload, len(payload),
