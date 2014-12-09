@@ -28,13 +28,6 @@ class PartitionReaderTestCase(unittest.TestCase):
         self.topic = c.open_topic("TopicPartitionTestCase", TopicConfig())
         self.reader = self.topic.open_partition(0, start_offset=0)
 
-    def test_seek(self):
-        msg = self.reader.consume()
-        self.assertEqual(0, msg.offset)
-        self.reader.seek(100)
-        msg = self.reader.consume()
-        self.assertEqual(100, msg.offset)
-
     def test_double_instantiations(self):
         with self.assertRaises(PartitionReaderException):
             second_reader = self.topic.open_partition(0, 0)
@@ -53,14 +46,17 @@ class PartitionReaderTestCase(unittest.TestCase):
         r = self.topic.open_partition(0, self.topic.OFFSET_BEGINNING)
         self.assertIsNotNone(r.consume().offset)
 
-        r.seek(r.OFFSET_END)
+        r.close()
+        r = self.topic.open_partition(0, self.topic.OFFSET_END)
         self.assertIsNone(r.consume())
 
-        r.seek(-1)
+        r.close()
+        r = self.topic.open_partition(0, -1)
         offset_e = r.consume().offset
         self.assertIsNone(r.consume())
 
-        r.seek(-10)
+        r.close()
+        r = self.topic.open_partition(0, -10)
         self.assertEqual(offset_e - r.consume().offset, 9)
 
 

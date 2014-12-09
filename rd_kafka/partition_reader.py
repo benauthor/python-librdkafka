@@ -118,11 +118,6 @@ def open_partition(topic, partition, start_offset):
             else:
                 return n_out
 
-        def seek(self, offset):
-            self._check_dead()
-            self._close()
-            _open_partition(topic, partition, offset)
-
         def close(self):
             try:
                 self._close()
