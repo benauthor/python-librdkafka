@@ -1,5 +1,10 @@
 from headers import ffi as _ffi, lib as _lib
+from . import _msg_opaques
 from utils import _voidp2bytes
+
+
+class MessageException(Exception):
+    pass
 
 
 class Message(object):
@@ -22,3 +27,19 @@ class Message(object):
     @property
     def offset(self):
         return self.cdata.offset
+
+    @property
+    def opaque(self):
+        """
+        Return the msg_opaque passed to ProducerTopic.produce()
+        """
+        if hasattr(self, 'opaque_freed'):
+            raise MessageException("As currently implemented, the msg_opaque "
+                                   "handle is no longer available after "
+                                   "dr_msg_cb() returns.")
+        else:
+            return _msg_opaques.from_handle(self.cdata._private)
+
+    def _free_opaque(self):
+        self.opaque_freed = True  # prevent crash by subsequent opaque() calls
+        _msg_opaques.drop_handle(self.cdata._private)

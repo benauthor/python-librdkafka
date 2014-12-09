@@ -2,6 +2,7 @@ from copy import deepcopy
 import errno
 import logging
 
+from . import _msg_opaques
 from headers import ffi as _ffi, lib as _lib
 from message import Message
 import partition_reader
@@ -9,6 +10,7 @@ from utils import _mk_errstr, _err2str, _errno2str, _voidp2bytes
 
 
 logger = logging.getLogger(__name__)
+
 callback_funcs = [] # TODO need a better place to keep our cffi callbacks alive
 
 
@@ -55,12 +57,18 @@ class Config(object):
         @_ffi.callback("void (rd_kafka_t *,"
                        "      const rd_kafka_message_t *, void *)")
         def func(kafka_handle, msg, opaque):
-            # XXX modify KafkaHandle so we can wrap it here and pass it on?
-            msg = Message(msg, manage_memory=False)
-            callback_func(msg, opaque=None)
-            # TODO the above should become opaque=_ffi.from_handle(opaque) but
-            # this requires that we always configure the opaque (eg. set it to
-            # None by default)
+            try:
+                # XXX modify KafkaHandle so we can wrap it here and pass it on?
+                msg = Message(msg, manage_memory=False)
+                callback_func(msg, opaque=None)
+                # TODO the above should become opaque=_ffi.from_handle(opaque)
+                # but this requires that we always configure the opaque (eg.
+                # set it to None by default)
+            finally:
+                # Clear the handle we created for the msg_opaque, as we don't
+                # expect to see it after this:
+                msg._free_opaque()
+
 
         callback_funcs.append(func) # prevent garbage-collection of func
         _lib.rd_kafka_conf_set_dr_msg_cb(self.cdata, func)
@@ -166,7 +174,7 @@ class ProducerTopic(BaseTopic):
     def produce(self, payload, key=None,
                 partition=_lib.RD_KAFKA_PARTITION_UA, msg_opaque=None):
         key = key or _ffi.NULL
-        msg_opaque = msg_opaque or _ffi.NULL
+        msg_opaque = _msg_opaques.get_handle(msg_opaque)
         rv = _lib.rd_kafka_produce(
                  self.cdata, partition, _lib.RD_KAFKA_MSG_F_COPY,
                  payload, len(payload),
