@@ -11,6 +11,7 @@ ffi.cdef(
     typedef ... rd_kafka_topic_t;
     typedef ... rd_kafka_conf_t;
     typedef ... rd_kafka_topic_conf_t;
+    typedef ... rd_kafka_queue_t;
     typedef enum {RD_KAFKA_RESP_ERR_NO_ERROR,
                   RD_KAFKA_RESP_ERR__PARTITION_EOF, ...} rd_kafka_resp_err_t;
 
@@ -79,25 +80,29 @@ ffi.cdef(
     const char *rd_kafka_topic_name (const rd_kafka_topic_t *rkt);
 
     #define RD_KAFKA_PARTITION_UA ...
+
+    rd_kafka_queue_t *rd_kafka_queue_new (rd_kafka_t *rk);
+    void rd_kafka_queue_destroy (rd_kafka_queue_t *rkqu);
+
     #define RD_KAFKA_OFFSET_BEGINNING ...
     #define RD_KAFKA_OFFSET_END ...
     #define RD_KAFKA_OFFSET_TAIL_BASE ... /* internal: do not use */
 
-    int rd_kafka_consume_start (rd_kafka_topic_t *rkt, int32_t partition,
-                                int64_t offset);
+    int rd_kafka_consume_start_queue (rd_kafka_topic_t *rkt, int32_t partition,
+                                      int64_t offset, rd_kafka_queue_t *rkqu);
     int rd_kafka_consume_stop (rd_kafka_topic_t *rkt, int32_t partition);
-    rd_kafka_message_t *rd_kafka_consume (rd_kafka_topic_t *rkt,
-                                          int32_t partition, int timeout_ms);
-    ssize_t rd_kafka_consume_batch (rd_kafka_topic_t *rkt, int32_t partition,
-                                    int timeout_ms,
-                                    rd_kafka_message_t **rkmessages,
-                                    size_t rkmessages_size);
-    int rd_kafka_consume_callback (rd_kafka_topic_t *rkt, int32_t partition,
-                                   int timeout_ms,
-                                   void (*consume_cb) (
-                                           rd_kafka_message_t *rkmessage,
-                                           void *opaque),
-                                   void *opaque);
+    rd_kafka_message_t *rd_kafka_consume_queue (rd_kafka_queue_t *rkqu,
+                                                int timeout_ms);
+    ssize_t rd_kafka_consume_batch_queue (rd_kafka_queue_t *rkqu,
+                                          int timeout_ms,
+                                          rd_kafka_message_t **rkmessages,
+                                          size_t rkmessages_size);
+    int rd_kafka_consume_callback_queue (rd_kafka_queue_t *rkqu,
+                                         int timeout_ms,
+                                         void (*consume_cb) (
+                                                rd_kafka_message_t *rkmessage,
+                                                void *opaque),
+                                         void *opaque);
 
     #define RD_KAFKA_MSG_F_COPY ...
 

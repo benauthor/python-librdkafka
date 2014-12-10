@@ -24,16 +24,10 @@ class PartitionReaderTestCase(unittest.TestCase):
         p.poll(100)
 
     def setUp(self):
-        c = Consumer(self.config)
-        self.topic = c.open_topic("TopicPartitionTestCase", TopicConfig())
+        self.consumer = Consumer(self.config)
+        self.topic = self.consumer.open_topic(
+                            "TopicPartitionTestCase", TopicConfig())
         self.reader = self.topic.open_partition(0, start_offset=0)
-
-    def test_seek(self):
-        msg = self.reader.consume()
-        self.assertEqual(0, msg.offset)
-        self.reader.seek(100)
-        msg = self.reader.consume()
-        self.assertEqual(100, msg.offset)
 
     def test_double_instantiations(self):
         with self.assertRaises(PartitionReaderException):
@@ -53,15 +47,40 @@ class PartitionReaderTestCase(unittest.TestCase):
         r = self.topic.open_partition(0, self.topic.OFFSET_BEGINNING)
         self.assertIsNotNone(r.consume().offset)
 
-        r.seek(r.OFFSET_END)
+        r.close()
+        r = self.topic.open_partition(0, self.topic.OFFSET_END)
         self.assertIsNone(r.consume())
 
-        r.seek(-1)
+        r.close()
+        r = self.topic.open_partition(0, -1)
         offset_e = r.consume().offset
         self.assertIsNone(r.consume())
 
-        r.seek(-10)
+        r.close()
+        r = self.topic.open_partition(0, -10)
         self.assertEqual(offset_e - r.consume().offset, 9)
+
+    def test_multi_topic_reader(self):
+        top2 = self.consumer.open_topic(
+                       "TopicPartitionTestCasePlusPlus", TopicConfig())
+        # write some stuff:
+        stuff = _random_str()
+        p = Producer(self.config)
+        t = p.open_topic("TopicPartitionTestCasePlusPlus", TopicConfig())
+        t.produce(stuff, partition=0)
+        r = partition_reader.Reader(((self.topic, 1, -1),
+                                     (top2, 0, -1)))
+        # we don't know in which order we'll get messages, but:
+        messages = []
+        for _ in range(4):
+            msg = r.consume()
+            # FIXME clearly the following is a symptom of our poor interface,
+            # we should probably do sth else than returning None all the time
+            if msg is not None:
+                messages.append(bytes(msg.payload))
+        self.assertIn(stuff, messages)
+        self.assertIn("boohoohoo", messages)
+
 
 
 class ConfigTestCase(unittest.TestCase):
@@ -159,6 +178,10 @@ class MsgOpaquesTestCase(unittest.TestCase):
             self.producer.poll()
         for o in objs:
             self.assertEqual(n, self.msg_opaques[id(o)])
+
+
+def _random_str():
+    return bytes(random.getrandbits(64))
 
 
 if __name__ == "__main__":
