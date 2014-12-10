@@ -1,10 +1,3 @@
-""" 
-Implements a singleton-interface to consume kafka partitions
-
-We need this because of librdkafka's consumer API, where we are only allowed 1
-call to rd_kafka_consume_start() for every rd_kafka_consume_stop() (as per the
-docs, and as is obvious because it would mix up offsets of concurrent readers)
-"""
 import errno
 
 from headers import ffi as _ffi, lib as _lib
@@ -25,6 +18,18 @@ class PartitionReaderException(Exception):
 
 
 def _open_partition(queue, topic, partition, start_offset):
+    """
+    Open a topic+partition for reading and return a lock for it
+
+    Subsequent calls for the same topic+partition ("toppar") will raise
+    exceptions, until the holder of the lock calls release() on it (which will
+    both close the toppar and release the lock).
+
+    We need this because of librdkafka's consumer API, where we are only
+    allowed 1 call to rd_kafka_consume_start_queue() for every
+    rd_kafka_consume_stop() (as per the docs, and as is obvious because it
+    would mix up offsets of concurrent readers)
+    """
     lock = TopparLock((topic, partition))
 
     if start_offset == OFFSET_BEGINNING:
@@ -80,6 +85,30 @@ class TopparLock(object):
 
 
 class Reader(object):
+    """
+    Wrapper for librdkafka's Queue API
+
+    Usage:
+    Create a new Reader instance like so:
+        r = Reader(((topic_a, partition_x, offset_n),
+                    (topic_b, partition_y, offset_m),
+                    ( ... )))
+        msg = r.consume() # or...
+        msg_list = r.consume_batch(max_messages=100) # or...
+        number_of_msgs = r.consume_callback(your_callback_func) # recommended
+
+    ... where topic_a may be the same or a different topic than topic_b, etc
+    etc, as long as all Topic instances were derived from the same Consumer
+    instance.
+
+    Implementation notes:
+    This exposes all of the *_queue() functionality provided by librdkafka;
+    cf. https://github.com/edenhill/librdkafka/wiki/Consuming-from-multiple-topics-partitions-from-a-single-thread
+
+    Currently, we have for simplicity assumed that even users who need to
+    access only a single topic+partition are happy to consume that via an
+    rdkafka-queue; that is, the non-*_queue() equivalents are not available.
+    """
     # exporting for convenience:
     OFFSET_BEGINNING = OFFSET_BEGINNING
     OFFSET_END = OFFSET_END
