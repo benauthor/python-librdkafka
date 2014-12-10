@@ -84,12 +84,14 @@ class Reader(object):
     OFFSET_BEGINNING = OFFSET_BEGINNING
     OFFSET_END = OFFSET_END
 
-    def __init__(self, topic, partition, start_offset):
-        self.cdata = _lib.rd_kafka_queue_new(topic.kafka_handle.cdata)
+    def __init__(self, toppars_plus_offsets):
+        self.kafka_handle = toppars_plus_offsets[0][0].kafka_handle
+        self.cdata = _lib.rd_kafka_queue_new(self.kafka_handle.cdata)
         # we mustn't reuse this instance after calling self.close(), as
         # someone else might be reading at that point:
         self.dead = False
-        self.lock = _open_partition(self.cdata, topic, partition, start_offset)
+        self.locks = [
+            _open_partition(self.cdata, *tpo) for tpo in toppars_plus_offsets]
 
     def __del__(self):
         if not self.dead:
@@ -103,7 +105,7 @@ class Reader(object):
                 return None
             elif _ffi.errno == errno.ENOENT:
                 raise PartitionReaderException(
-                        "Cannot access '{}'/{}".format(topic, partition))
+                        "Got ENOENT while trying to read from queue")
         elif msg.err == _lib.RD_KAFKA_RESP_ERR_NO_ERROR:
             return Message(msg)
         elif msg.err == _lib.RD_KAFKA_RESP_ERR__PARTITION_EOF:
@@ -150,8 +152,9 @@ class Reader(object):
 
     def close(self):
         try:
-            if hasattr(self, 'lock'):  # False if we didn't acquire the lock
-                self.lock.release()
+            if hasattr(self, 'locks'):  # False if we failed to acquire a lock
+                for l in self.locks:
+                    l.release()
         finally:
             _lib.rd_kafka_queue_destroy(self.cdata)
             self.dead = True

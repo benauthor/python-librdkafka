@@ -243,7 +243,7 @@ class ConsumerTopic(BaseTopic):
     OFFSET_END = partition_reader.OFFSET_END
 
     def open_partition(self, partition, start_offset):
-        return partition_reader.Reader(self, partition, start_offset)
+        return partition_reader.Reader(((self, partition, start_offset), ))
 
 
 class Consumer(KafkaHandle):
