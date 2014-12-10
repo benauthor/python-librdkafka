@@ -87,18 +87,14 @@ class Reader(object):
     def __init__(self, toppars_plus_offsets):
         self.kafka_handle = toppars_plus_offsets[0][0].kafka_handle
         self.cdata = _lib.rd_kafka_queue_new(self.kafka_handle.cdata)
-        # we mustn't reuse this instance after calling self.close(), as
-        # someone else might be reading at that point:
-        self.dead = False
         self.locks = [
             _open_partition(self.cdata, *tpo) for tpo in toppars_plus_offsets]
 
     def __del__(self):
-        if not self.dead:
-            self.close()
+        self.close()
 
     def consume(self, timeout_ms=1000):
-        self._check_dead()
+        self._check_not_closed()
         msg = _lib.rd_kafka_consume_queue(self.cdata, timeout_ms)
         if msg == _ffi.NULL:
             if _ffi.errno == errno.ETIMEDOUT:
@@ -116,7 +112,7 @@ class Reader(object):
             raise PartitionReaderException(_err2str(msg.err))
 
     def consume_batch(self, max_messages, timeout_ms=1000):
-        self._check_dead()
+        self._check_not_closed()
         msg_array = _ffi.new('rd_kafka_message_t* []', max_messages)
         n_out = _lib.rd_kafka_consume_batch_queue(
                     self.cdata, timeout_ms, msg_array, max_messages)
@@ -135,7 +131,7 @@ class Reader(object):
         and any python object you wish to pass in the 'opaque' above.
         After timeout_ms, return the number of messages consumed.
         """
-        self._check_dead()
+        self._check_not_closed()
         opaque_p = _ffi.new_handle(opaque)
 
         @_ffi.callback('void (rd_kafka_message_t *, void *)')
@@ -151,18 +147,17 @@ class Reader(object):
             return n_out
 
     def close(self):
+        if self.cdata is None:
+            return
         try:
             if hasattr(self, 'locks'):  # False if we failed to acquire a lock
                 for l in self.locks:
                     l.release()
         finally:
             _lib.rd_kafka_queue_destroy(self.cdata)
-            self.dead = True
+            self.cdata = None
 
-    def _check_dead(self):
-        # TODO it's a design-smell that we're in trouble if we forget to
-        # call _check_dead(); probably we should copy topic and/or
-        # partition to self and set them None on close().
-        if self.dead:
+    def _check_not_closed(self):
+        if self.cdata is None:
             raise PartitionReaderException(
                     "You called close() on this handle; get a fresh one.")
