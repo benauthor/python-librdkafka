@@ -52,7 +52,7 @@ def _open_partition(queue, topic, partition, start_offset):
 
 
 class TopparLock(object):
-    """ Hold a lock to prevent concurrent Readers on a topic+partition """
+    """ Hold a lock to prevent concurrent readers on a topic+partition """
     def __init__(self, toppar):
         if toppar in open_partitions:
             self.toppar = None
@@ -84,15 +84,15 @@ class TopparLock(object):
         self.toppar = None
 
 
-class Reader(object):
+class QueueReader(object):
     """
     Wrapper for librdkafka's Queue API
 
     Usage:
-    Create a new Reader instance like so:
-        r = Reader(((topic_a, partition_x, offset_n),
-                    (topic_b, partition_y, offset_m),
-                    ( ... )))
+    Create a new QueueReader instance like so:
+        r = QueueReader(((topic_a, partition_x, offset_n),
+                         (topic_b, partition_y, offset_m),
+                         ( ... )))
         msg = r.consume() # or...
         msg_list = r.consume_batch(max_messages=100) # or...
         number_of_msgs = r.consume_callback(your_callback_func) # recommended

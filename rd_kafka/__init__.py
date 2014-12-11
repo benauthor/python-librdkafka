@@ -5,7 +5,7 @@ import logging
 from . import _msg_opaques
 from headers import ffi as _ffi, lib as _lib
 from message import Message
-import partition_reader
+from .partition_reader import QueueReader, PartitionReaderException
 from utils import _mk_errstr, _err2str, _errno2str, _voidp2bytes
 
 
@@ -239,11 +239,11 @@ class Metadata(object):
 
 
 class ConsumerTopic(BaseTopic):
-    OFFSET_BEGINNING = partition_reader.OFFSET_BEGINNING
-    OFFSET_END = partition_reader.OFFSET_END
+    OFFSET_BEGINNING = QueueReader.OFFSET_BEGINNING
+    OFFSET_END = QueueReader.OFFSET_END
 
     def open_partition(self, partition, start_offset):
-        return partition_reader.Reader(((self, partition, start_offset), ))
+        return QueueReader(((self, partition, start_offset), ))
 
 
 class Consumer(KafkaHandle):
