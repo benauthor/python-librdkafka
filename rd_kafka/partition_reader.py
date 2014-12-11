@@ -52,7 +52,7 @@ def _open_partition(queue, topic, partition, start_offset):
 
 
 class TopparLock(object):
-    """ Hold a lock to prevent concurrent Readers on a topic+partition """
+    """ Hold a lock to prevent concurrent readers on a topic+partition """
     def __init__(self, toppar):
         if toppar in open_partitions:
             self.toppar = None
@@ -84,22 +84,22 @@ class TopparLock(object):
         self.toppar = None
 
 
-class Reader(object):
+class QueueReader(object):
     """
     Wrapper for librdkafka's Queue API
 
     Usage:
-    Create a new Reader instance like so:
-        r = Reader(((topic_a, partition_x, offset_n),
-                    (topic_b, partition_y, offset_m),
-                    ( ... )))
+    Create a new QueueReader instance like so:
+        r = consumer_instance.new_queue()
+        r.add_toppar(topic_a, partition_x, offset_n)
+        r.add_toppar(topic_b, partition_y, offset_m)
+        r.add_toppar(... etc etc ...)
+    where topic_a may be the same or a different topic than topic_b, etc etc,
+    as long as all Topic instances were derived from the same Consumer
+    instance.  Then:
         msg = r.consume() # or...
         msg_list = r.consume_batch(max_messages=100) # or...
         number_of_msgs = r.consume_callback(your_callback_func) # recommended
-
-    ... where topic_a may be the same or a different topic than topic_b, etc
-    etc, as long as all Topic instances were derived from the same Consumer
-    instance.
 
     Implementation notes:
     This exposes all of the *_queue() functionality provided by librdkafka;
@@ -113,14 +113,28 @@ class Reader(object):
     OFFSET_BEGINNING = OFFSET_BEGINNING
     OFFSET_END = OFFSET_END
 
-    def __init__(self, toppars_plus_offsets):
-        self.kafka_handle = toppars_plus_offsets[0][0].kafka_handle
+    def __init__(self, kafka_handle):
+        self.kafka_handle = kafka_handle
         self.cdata = _lib.rd_kafka_queue_new(self.kafka_handle.cdata)
-        self.locks = [
-            _open_partition(self.cdata, *tpo) for tpo in toppars_plus_offsets]
+        self.locks = []  # see add_toppar()
 
     def __del__(self):
         self.close()
+
+    def __copy__(self):
+        raise NotImplementedError("Permitting copies would be confusing")
+
+    def __deepcopy__(self, memo):
+        raise NotImplementedError("Permitting copies would be confusing")
+
+    def add_toppar(self, topic, partition, start_offset):
+        """ Open given topic+partition for reading through this queue """
+        # TODO sensible default for start_offset
+        if self.kafka_handle.cdata != topic.kafka_handle.cdata:
+            raise PartitionReaderException(
+                    "Topics must derive from same KafkaHandle as queue")
+        self.locks.append(
+            _open_partition(self.cdata, topic, partition, start_offset))
 
     def consume(self, timeout_ms=1000):
         self._check_not_closed()
@@ -179,9 +193,8 @@ class Reader(object):
         if self.cdata is None:
             return
         try:
-            if hasattr(self, 'locks'):  # False if we failed to acquire a lock
-                for l in self.locks:
-                    l.release()
+            while self.locks:
+                self.locks.pop().release()
         finally:
             _lib.rd_kafka_queue_destroy(self.cdata)
             self.cdata = None

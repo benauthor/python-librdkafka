@@ -3,13 +3,12 @@ import random
 import unittest
 
 from rd_kafka import *
-from rd_kafka.partition_reader import PartitionReaderException
 
 
 kafka_docker = "kafka0:9092" # TODO make portable (see fig.yml etc)
 
 
-class PartitionReaderTestCase(unittest.TestCase):
+class QueueReaderTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.config = Config()
@@ -68,8 +67,10 @@ class PartitionReaderTestCase(unittest.TestCase):
         p = Producer(self.config)
         t = p.open_topic("TopicPartitionTestCasePlusPlus", TopicConfig())
         t.produce(stuff, partition=0)
-        r = partition_reader.Reader(((self.topic, 1, -1),
-                                     (top2, 0, -1)))
+
+        r = self.consumer.new_queue()
+        r.add_toppar(self.topic, 1, -1)
+        r.add_toppar(top2, 0, -1)
         # we don't know in which order we'll get messages, but:
         messages = []
         for _ in range(4):
