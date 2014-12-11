@@ -17,6 +17,10 @@ class Message(object):
             _lib.rd_kafka_message_destroy(self.cdata)
 
     @property
+    def partition(self):
+        return self.cdata.partition
+
+    @property
     def payload(self):
         return _voidp2bytes(self.cdata.payload, self.cdata.len)
 
