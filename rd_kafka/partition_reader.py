@@ -90,7 +90,7 @@ class QueueReader(object):
 
     Usage:
     Create a new QueueReader instance like so:
-        r = QueueReader(kafka_handle)
+        r = consumer_instance.new_queue()
         r.add_toppar(topic_a, partition_x, offset_n)
         r.add_toppar(topic_b, partition_y, offset_m)
         r.add_toppar(... etc etc ...)

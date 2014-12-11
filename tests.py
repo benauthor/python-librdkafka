@@ -68,7 +68,7 @@ class QueueReaderTestCase(unittest.TestCase):
         t = p.open_topic("TopicPartitionTestCasePlusPlus", TopicConfig())
         t.produce(stuff, partition=0)
 
-        r = QueueReader(self.consumer)
+        r = self.consumer.new_queue()
         r.add_toppar(self.topic, 1, -1)
         r.add_toppar(top2, 0, -1)
         # we don't know in which order we'll get messages, but:
