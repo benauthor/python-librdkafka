@@ -122,6 +122,12 @@ class QueueReader(object):
     def __del__(self):
         self.close()
 
+    def __copy__(self):
+        raise NotImplementedError("Permitting copies would be confusing")
+
+    def __deepcopy__(self, memo):
+        raise NotImplementedError("Permitting copies would be confusing")
+
     def consume(self, timeout_ms=1000):
         self._check_not_closed()
         msg = _lib.rd_kafka_consume_queue(self.cdata, timeout_ms)
