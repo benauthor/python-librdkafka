@@ -243,7 +243,9 @@ class ConsumerTopic(BaseTopic):
     OFFSET_END = QueueReader.OFFSET_END
 
     def open_partition(self, partition, start_offset):
-        return QueueReader(((self, partition, start_offset), ))
+        qr = QueueReader(self.kafka_handle)
+        qr.add_toppar(self, partition, start_offset)
+        return qr
 
 
 class Consumer(KafkaHandle):
