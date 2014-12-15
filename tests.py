@@ -1,5 +1,6 @@
 from collections import defaultdict
 import random
+import time
 import unittest
 
 from rd_kafka import *
@@ -106,11 +107,7 @@ class ConfigTestCase(unittest.TestCase):
 
         for _ in range(n_msgs):
             t.produce(msg_payload)
-        n_polls = 0
-        while call_counter[0] != n_msgs and n_polls < 10:
-            producer.poll()
-            n_polls += 1
-        self.assertEqual(call_counter[0], n_msgs)
+        _poll_until_true(lambda: call_counter[0] == n_msgs, producer)
 
 
 class TopicConfigTestCase(unittest.TestCase):
@@ -137,10 +134,7 @@ class TopicConfigTestCase(unittest.TestCase):
 
         for _ in range(n_msgs):
             t.produce(b"partition me", key=test_key)
-        self.producer.poll(2000)
-        # ^^ We only need more time here when count_callbacks() is made to
-        # return None sometimes - that makes sense I suppose.
-        self.assertGreaterEqual(call_counter[0], n_msgs)
+        _poll_until_true(lambda: call_counter[0] >= n_msgs, self.producer)
 
 
 class MsgOpaquesTestCase(unittest.TestCase):
@@ -175,10 +169,19 @@ class MsgOpaquesTestCase(unittest.TestCase):
         for i in range(n):
             for o in objs:
                 self.topic.produce(bytes(i), msg_opaque=o)
-        while sum(self.msg_opaques.values()) < n * len(objs):
-            self.producer.poll()
+        _poll_until_true(
+                lambda: sum(self.msg_opaques.values()) == n * len(objs),
+                self.producer)
         for o in objs:
             self.assertEqual(n, self.msg_opaques[id(o)])
+
+
+def _poll_until_true(fbool, kafka_handle, timeout=10):
+    t0 = time.time()
+    while not fbool():
+        kafka_handle.poll()
+        if (time.time() - t0 > timeout):
+            raise Exception("Timed out while polling")
 
 
 def _random_str():
