@@ -16,7 +16,7 @@ class QueueReaderTestCase(unittest.TestCase):
 
         # make sure we have some messages:
         p = Producer(cls.config)
-        t = p.open_topic("TopicPartitionTestCase", TopicConfig())
+        t = p.open_topic("TopicPartitionTestCase")
         for _ in range(1000):
             t.produce(b"boohoohoo")
         # force flushing queues:
@@ -24,8 +24,7 @@ class QueueReaderTestCase(unittest.TestCase):
 
     def setUp(self):
         self.consumer = Consumer(self.config)
-        self.topic = self.consumer.open_topic(
-                            "TopicPartitionTestCase", TopicConfig())
+        self.topic = self.consumer.open_topic("TopicPartitionTestCase")
         self.reader = self.topic.open_partition(0, start_offset=0)
 
     def test_double_instantiations(self):
@@ -60,12 +59,11 @@ class QueueReaderTestCase(unittest.TestCase):
         self.assertEqual(offset_e - r.consume().offset, 9)
 
     def test_multi_topic_reader(self):
-        top2 = self.consumer.open_topic(
-                       "TopicPartitionTestCasePlusPlus", TopicConfig())
+        top2 = self.consumer.open_topic("TopicPartitionTestCasePlusPlus")
         # write some stuff:
         stuff = _random_str()
         p = Producer(self.config)
-        t = p.open_topic("TopicPartitionTestCasePlusPlus", TopicConfig())
+        t = p.open_topic("TopicPartitionTestCasePlusPlus")
         t.produce(stuff, partition=0)
 
         r = self.consumer.new_queue()
@@ -100,8 +98,7 @@ class ConfigTestCase(unittest.TestCase):
 
         self.config["dr_msg_cb"] = count_callbacks
         producer = Producer(self.config)
-        tc = TopicConfig()
-        t = producer.open_topic("test_set_dr_msg_cb", tc)
+        t = producer.open_topic("test_set_dr_msg_cb")
 
         for _ in range(n_msgs):
             t.produce(msg_payload)
@@ -125,9 +122,8 @@ class TopicConfigTestCase(unittest.TestCase):
             # try special return-value None a few times, too:
             return random.choice(part_list) if call_counter[0] % 20 else None
 
-        tc = TopicConfig()
-        tc.set("partitioner", count_callbacks)
-        t = self.producer.open_topic("test_set_partitioner_cb", tc)
+        topic_config = {"partitioner": count_callbacks}
+        t = self.producer.open_topic("test_set_partitioner_cb", topic_config)
 
         for _ in range(n_msgs):
             t.produce(b"partition me", key=test_key)
@@ -147,8 +143,7 @@ class MsgOpaquesTestCase(unittest.TestCase):
         cls.config["dr_msg_cb"] = dr_msg_cb
 
         cls.producer = Producer(cls.config)
-        cls.topic = cls.producer.open_topic(
-                        "MsgOpaquesTestCase", TopicConfig())
+        cls.topic = cls.producer.open_topic("MsgOpaquesTestCase")
 
     def setUp(self):
         self.msg_opaques.clear()

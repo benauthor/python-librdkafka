@@ -1,8 +1,6 @@
-from copy import deepcopy
 import logging
 
-from . import _msg_opaques
-from ._config_handles import Config, TopicConfig # temporary
+from . import _config_handles, _msg_opaques
 from headers import ffi as _ffi, lib as _lib
 from .partition_reader import QueueReader, PartitionReaderException
 from .utils import _mk_errstr, _err2str, _errno2str
@@ -16,10 +14,10 @@ class LibrdkafkaException(Exception):
 
 
 class BaseTopic(object):
-    def __init__(self, name, kafka_handle, topic_config):
+    def __init__(self, name, kafka_handle, topic_config_dict):
         self.kafka_handle = kafka_handle
 
-        cfg = deepcopy(topic_config) # next call would free topic_config.cdata
+        cfg = _config_handles.TopicConfig(topic_config_dict)
         self.cdata = _lib.rd_kafka_topic_new(
                          self.kafka_handle.cdata, name, cfg.cdata)
         cfg.cdata = None # prevent double-free in cfg.__del__()
@@ -39,7 +37,7 @@ class KafkaHandle(object):
 
     def __init__(self, handle_type, config_dict):
         errstr = _mk_errstr()
-        cfg = Config(config_dict)
+        cfg = _config_handles.Config(config_dict)
         self.cdata = _lib.rd_kafka_new(
                          handle_type, cfg.cdata, errstr, len(errstr))
         cfg.cdata = None
@@ -49,8 +47,8 @@ class KafkaHandle(object):
     def __del__(self):
         _lib.rd_kafka_destroy(self.cdata)
 
-    def open_topic(self, name, topic_config):
-        return self.topic_type(name, self, topic_config)
+    def open_topic(self, name, topic_config_dict={}):
+        return self.topic_type(name, self, topic_config_dict)
 
     def poll(self, timeout_ms=1000):
         return _lib.rd_kafka_poll(self.cdata, timeout_ms)

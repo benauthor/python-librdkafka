@@ -71,9 +71,12 @@ class Config(object):
 
 
 class TopicConfig(object):
-    # TODO have a dict interface with __getitem__ etc
-    def __init__(self, cdata=None):
+    def __init__(self, topic_config_dict={}, cdata=None):
+        if topic_config_dict and cdata:
+            raise ConfigException("Provide either topic_config_dict *or* cdata")
         self.cdata = cdata or _lib.rd_kafka_topic_conf_new()
+        for k, v in topic_config_dict.items():
+            self.set(k, v)
 
     def __copy__(self):
         raise NotImplementedError
