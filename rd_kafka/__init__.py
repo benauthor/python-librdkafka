@@ -17,10 +17,19 @@ class BaseTopic(object):
     def __init__(self, name, kafka_handle, topic_config_dict):
         self.kafka_handle = kafka_handle
 
-        cfg = _config_handles.TopicConfig(topic_config_dict)
+        conf = _lib.rd_kafka_topic_conf_new()
+        for name, value in topic_config_dict.items():
+            if name == "partitioner":
+                _config_handles.topic_conf_set_partitioner_cb(conf, value)
+            else:
+                errstr = _mk_errstr()
+                res = _lib.rd_kafka_topic_conf_set(
+                          conf, name, value, errstr, len(errstr))
+                if res != _lib.RD_KAFKA_CONF_OK:
+                    raise LibrdkafkaException(_ffi.string(errstr))
+
         self.cdata = _lib.rd_kafka_topic_new(
-                         self.kafka_handle.cdata, name, cfg.cdata)
-        cfg.cdata = None # prevent double-free in cfg.__del__()
+                         self.kafka_handle.cdata, name, conf)
         if self.cdata == _ffi.NULL:
             raise LibrdkafkaException(_errno2str())
 
