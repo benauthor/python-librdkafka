@@ -3,9 +3,6 @@ from .message import Message
 from .utils import _voidp2bytes
 
 
-callback_funcs = [] # TODO need a better place to keep our cffi callbacks alive
-
-
 def conf_set_dr_msg_cb(conf_handle, callback_func):
     """
     Set python callback to accept delivery reports
@@ -13,6 +10,8 @@ def conf_set_dr_msg_cb(conf_handle, callback_func):
     Pass a callback_func with signature f(msg, **kwargs), where msg will be
     a message.Message and kwargs is currently empty (but should eventually
     provide the KafkaHandle and the configured opaque handle)
+
+    NB returns a cffi callback handle that must be kept alive
     """
     @_ffi.callback("void (rd_kafka_t *,"
                    "      const rd_kafka_message_t *, void *)")
@@ -29,8 +28,8 @@ def conf_set_dr_msg_cb(conf_handle, callback_func):
             # expect to see it after this:
             msg._free_opaque()
 
-    callback_funcs.append(func) # prevent garbage-collection of func
     _lib.rd_kafka_conf_set_dr_msg_cb(conf_handle, func)
+    return func
 
 
 def topic_conf_set_partitioner_cb(topic_conf_handle, callback_func):
@@ -41,6 +40,8 @@ def topic_conf_set_partitioner_cb(topic_conf_handle, callback_func):
         'key_string, partitions_available_list => item'
     where item is selected from partition_list, or None if the function
     couldn't decide a partition.
+
+    NB returns a cffi callback handle that must be kept alive
     """
     @_ffi.callback("int32_t (const rd_kafka_topic_t *, const void *,"
                    "         size_t, int32_t, void *, void *)")
@@ -57,5 +58,5 @@ def topic_conf_set_partitioner_cb(topic_conf_handle, callback_func):
                 p = None
         return _lib.RD_KAFKA_PARTITION_UA if p is None else p
 
-    callback_funcs.append(func) # prevent garbage-collection of func
     _lib.rd_kafka_topic_conf_set_partitioner_cb(topic_conf_handle, func)
+    return func

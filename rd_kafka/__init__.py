@@ -17,10 +17,12 @@ class BaseTopic(object):
     def __init__(self, name, kafka_handle, topic_config_dict):
         self.kafka_handle = kafka_handle
 
+        self.conf_callbacks = [] # keeps callback handles alive
         conf = _lib.rd_kafka_topic_conf_new()
         for name, value in topic_config_dict.items():
             if name == "partitioner":
-                _config_handles.topic_conf_set_partitioner_cb(conf, value)
+                self.conf_callbacks.append(
+                    _config_handles.topic_conf_set_partitioner_cb(conf, value))
             else:
                 errstr = _mk_errstr()
                 res = _lib.rd_kafka_topic_conf_set(
@@ -45,12 +47,14 @@ class KafkaHandle(object):
     topic_type = BaseTopic
 
     def __init__(self, handle_type, config_dict):
+        self.conf_callbacks = [] # keeps callback handles alive
         conf = _lib.rd_kafka_conf_new()
         for name, value in config_dict.items():
             if name == "dr_cb":
                 raise NotImplementedError("Try dr_msg_cb instead?")
             elif name == "dr_msg_cb":
-                _config_handles.conf_set_dr_msg_cb(conf, value)
+                self.conf_callbacks.append(
+                        _config_handles.conf_set_dr_msg_cb(conf, value))
             else:
                 errstr = _mk_errstr()
                 res = _lib.rd_kafka_conf_set(
