@@ -11,8 +11,12 @@ class ConfigException(Exception):
 
 
 class Config(object):
-    def __init__(self, cdata=None):
+    def __init__(self, config_dict={}, cdata=None):
+        if config_dict and cdata:
+            raise ConfigException("Provide either config_dict *or* cdata")
         self.cdata = cdata or _lib.rd_kafka_conf_new()
+        for k, v in config_dict.items():
+            self.set(k, v)
 
     def __copy__(self):
         raise NotImplementedError

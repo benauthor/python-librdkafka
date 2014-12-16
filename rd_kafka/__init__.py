@@ -37,9 +37,9 @@ class BaseTopic(object):
 class KafkaHandle(object):
     topic_type = BaseTopic
 
-    def __init__(self, handle_type, config):
+    def __init__(self, handle_type, config_dict):
         errstr = _mk_errstr()
-        cfg = deepcopy(config) # rd_kafka_new() will free config.cdata
+        cfg = Config(config_dict)
         self.cdata = _lib.rd_kafka_new(
                          handle_type, cfg.cdata, errstr, len(errstr))
         cfg.cdata = None
@@ -74,9 +74,9 @@ class ProducerTopic(BaseTopic):
 class Producer(KafkaHandle):
     topic_type = ProducerTopic
 
-    def __init__(self, config):
+    def __init__(self, config_dict):
         super(Producer, self).__init__(handle_type=_lib.RD_KAFKA_PRODUCER,
-                                       config=config)
+                                       config_dict=config_dict)
 
     def __del__(self):
         # flush the write queues:
@@ -139,9 +139,9 @@ class ConsumerTopic(BaseTopic):
 class Consumer(KafkaHandle):
     topic_type = ConsumerTopic
 
-    def __init__(self, config):
+    def __init__(self, config_dict):
         super(Consumer, self).__init__(handle_type=_lib.RD_KAFKA_CONSUMER,
-                                       config=config)
+                                       config_dict=config_dict)
 
     def new_queue(self):
         return partition_reader.QueueReader(self)

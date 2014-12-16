@@ -12,8 +12,7 @@ kafka_docker = "kafka0:9092" # TODO make portable (see fig.yml etc)
 class QueueReaderTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.config = Config()
-        cls.config.set("metadata.broker.list", kafka_docker)
+        cls.config = {"metadata.broker.list": kafka_docker}
 
         # make sure we have some messages:
         p = Producer(cls.config)
@@ -88,8 +87,7 @@ class QueueReaderTestCase(unittest.TestCase):
 class ConfigTestCase(unittest.TestCase):
     @classmethod
     def setUp(self):
-        self.config = Config()
-        self.config.set("metadata.broker.list", kafka_docker)
+        self.config = {"metadata.broker.list": kafka_docker}
 
     def test_set_dr_msg_cb(self):
         n_msgs = 100
@@ -100,7 +98,7 @@ class ConfigTestCase(unittest.TestCase):
             self.assertEqual(bytes(msg.payload), msg_payload)
             call_counter[0] += 1
 
-        self.config.set("dr_msg_cb", count_callbacks)
+        self.config["dr_msg_cb"] = count_callbacks
         producer = Producer(self.config)
         tc = TopicConfig()
         t = producer.open_topic("test_set_dr_msg_cb", tc)
@@ -113,8 +111,7 @@ class ConfigTestCase(unittest.TestCase):
 class TopicConfigTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.config = Config()
-        cls.config.set("metadata.broker.list", kafka_docker)
+        cls.config = {"metadata.broker.list": kafka_docker}
         cls.producer = Producer(cls.config)
 
     def test_set_partitioner_cb(self):
@@ -140,14 +137,14 @@ class TopicConfigTestCase(unittest.TestCase):
 class MsgOpaquesTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.config = Config()
-        cls.config.set("metadata.broker.list", kafka_docker)
-        cls.config.set("queue.buffering.max.ms", "10")
+        cls.config = {
+                "metadata.broker.list": kafka_docker,
+                "queue.buffering.max.ms": "10"}
 
         cls.msg_opaques = defaultdict(int)
         def dr_msg_cb(msg, **kwargs):
             cls.msg_opaques[id(msg.opaque)] += 1
-        cls.config.set("dr_msg_cb", dr_msg_cb)
+        cls.config["dr_msg_cb"] = dr_msg_cb
 
         cls.producer = Producer(cls.config)
         cls.topic = cls.producer.open_topic(
