@@ -11,10 +11,8 @@ class ConfigException(Exception):
 
 
 class Config(object):
-    def __init__(self, config_dict={}, cdata=None):
-        if config_dict and cdata:
-            raise ConfigException("Provide either config_dict *or* cdata")
-        self.cdata = cdata or _lib.rd_kafka_conf_new()
+    def __init__(self, config_dict={}):
+        self.cdata = _lib.rd_kafka_conf_new()
         for k, v in config_dict.items():
             self.set(k, v)
 
@@ -22,8 +20,7 @@ class Config(object):
         raise NotImplementedError
 
     def __deepcopy__(self, memo):
-        new_cdata = _lib.rd_kafka_conf_dup(self.cdata)
-        return Config(new_cdata)
+        raise NotImplementedError
 
     def __del__(self):
         if self.cdata is not None:
@@ -71,10 +68,8 @@ class Config(object):
 
 
 class TopicConfig(object):
-    def __init__(self, topic_config_dict={}, cdata=None):
-        if topic_config_dict and cdata:
-            raise ConfigException("Provide either topic_config_dict *or* cdata")
-        self.cdata = cdata or _lib.rd_kafka_topic_conf_new()
+    def __init__(self, topic_config_dict={}):
+        self.cdata = _lib.rd_kafka_topic_conf_new()
         for k, v in topic_config_dict.items():
             self.set(k, v)
 
@@ -82,8 +77,7 @@ class TopicConfig(object):
         raise NotImplementedError
 
     def __deepcopy__(self, memo):
-        new_cdata = _lib.rd_kafka_topic_conf_dup(self.cdata)
-        return TopicConfig(new_cdata)
+        raise NotImplementedError
 
     def __del__(self):
         if self.cdata is not None:

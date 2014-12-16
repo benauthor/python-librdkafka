@@ -36,7 +36,6 @@ ffi.cdef(
 
     typedef enum {RD_KAFKA_CONF_OK, ...  } rd_kafka_conf_res_t;
     rd_kafka_conf_t *rd_kafka_conf_new (void);
-    rd_kafka_conf_t *rd_kafka_conf_dup (const rd_kafka_conf_t *conf);
     void rd_kafka_conf_destroy (rd_kafka_conf_t *conf);
     rd_kafka_conf_res_t rd_kafka_conf_set (rd_kafka_conf_t *conf,
                                            const char *name,
@@ -50,8 +49,6 @@ ffi.cdef(
                                           void *opaque));
 
     rd_kafka_topic_conf_t *rd_kafka_topic_conf_new (void);
-    rd_kafka_topic_conf_t *rd_kafka_topic_conf_dup (const rd_kafka_topic_conf_t
-                                                    *conf);
     void rd_kafka_topic_conf_destroy (rd_kafka_topic_conf_t *topic_conf);
     rd_kafka_conf_res_t rd_kafka_topic_conf_set (rd_kafka_topic_conf_t *conf,
                                                  const char *name,
