@@ -10,61 +10,31 @@ class ConfigException(Exception):
     pass
 
 
-class Config(object):
-    def __init__(self, config_dict={}):
-        self.cdata = _lib.rd_kafka_conf_new()
-        for k, v in config_dict.items():
-            self.set(k, v)
+def conf_set_dr_msg_cb(conf_handle, callback_func):
+    """
+    Set python callback to accept delivery reports
 
-    def __copy__(self):
-        raise NotImplementedError
+    Pass a callback_func with signature f(msg, **kwargs), where msg will be
+    a message.Message and kwargs is currently empty (but should eventually
+    provide the KafkaHandle and the configured opaque handle)
+    """
+    @_ffi.callback("void (rd_kafka_t *,"
+                   "      const rd_kafka_message_t *, void *)")
+    def func(kafka_handle, msg, opaque):
+        try:
+            # XXX modify KafkaHandle so we can wrap it here and pass it on?
+            msg = Message(msg, manage_memory=False)
+            callback_func(msg, opaque=None)
+            # TODO the above should become opaque=_ffi.from_handle(opaque)
+            # but this requires that we always configure the opaque (eg.
+            # set it to None by default)
+        finally:
+            # Clear the handle we created for the msg_opaque, as we don't
+            # expect to see it after this:
+            msg._free_opaque()
 
-    def __deepcopy__(self, memo):
-        raise NotImplementedError
-
-    def __del__(self):
-        if self.cdata is not None:
-            # NB we must set cdata to None after calling functions on it that
-            # destroy it, to avoid a double-free here:
-            _lib.rd_kafka_conf_destroy(self.cdata)
-
-    def set(self, name, value):
-        errstr = _mk_errstr()
-        if name == "dr_cb":
-            raise NotImplementedError("Try dr_msg_cb instead?")
-        if name == "dr_msg_cb":
-            return self.set_dr_msg_cb(value)
-        res = _lib.rd_kafka_conf_set(
-                  self.cdata, name, value, errstr, len(errstr))
-        if res != _lib.RD_KAFKA_CONF_OK:
-            raise ConfigException(_ffi.string(errstr))
-
-    def set_dr_msg_cb(self, callback_func):
-        """
-        Set python callback to accept delivery reports
-
-        Pass a callback_func with signature f(msg, **kwargs), where msg will be
-        a message.Message and kwargs is currently empty (but should eventually
-        provide the KafkaHandle and the configured opaque handle)
-        """
-        @_ffi.callback("void (rd_kafka_t *,"
-                       "      const rd_kafka_message_t *, void *)")
-        def func(kafka_handle, msg, opaque):
-            try:
-                # XXX modify KafkaHandle so we can wrap it here and pass it on?
-                msg = Message(msg, manage_memory=False)
-                callback_func(msg, opaque=None)
-                # TODO the above should become opaque=_ffi.from_handle(opaque)
-                # but this requires that we always configure the opaque (eg.
-                # set it to None by default)
-            finally:
-                # Clear the handle we created for the msg_opaque, as we don't
-                # expect to see it after this:
-                msg._free_opaque()
-
-
-        callback_funcs.append(func) # prevent garbage-collection of func
-        _lib.rd_kafka_conf_set_dr_msg_cb(self.cdata, func)
+    callback_funcs.append(func) # prevent garbage-collection of func
+    _lib.rd_kafka_conf_set_dr_msg_cb(conf_handle, func)
 
 
 class TopicConfig(object):

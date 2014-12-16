@@ -36,11 +36,22 @@ class KafkaHandle(object):
     topic_type = BaseTopic
 
     def __init__(self, handle_type, config_dict):
+        conf = _lib.rd_kafka_conf_new()
+        for name, value in config_dict.items():
+            if name == "dr_cb":
+                raise NotImplementedError("Try dr_msg_cb instead?")
+            elif name == "dr_msg_cb":
+                _config_handles.conf_set_dr_msg_cb(conf, value)
+            else:
+                errstr = _mk_errstr()
+                res = _lib.rd_kafka_conf_set(
+                          conf, name, value, errstr, len(errstr))
+                if res != _lib.RD_KAFKA_CONF_OK:
+                    raise LibrdkafkaException(_ffi.string(errstr))
+
         errstr = _mk_errstr()
-        cfg = _config_handles.Config(config_dict)
         self.cdata = _lib.rd_kafka_new(
-                         handle_type, cfg.cdata, errstr, len(errstr))
-        cfg.cdata = None
+                         handle_type, conf, errstr, len(errstr))
         if self.cdata == _ffi.NULL:
             raise LibrdkafkaException(_ffi.string(errstr))
 
