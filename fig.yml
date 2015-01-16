@@ -1,0 +1,21 @@
+zookeeper:
+    image: jplock/zookeeper:3.4.5
+kafka0:
+    # This is a hack to help kafka expose the correct name to zookeeper;
+    # obviously life would be easier if fig could dynamically set this, because
+    # now it doesn't work if we 'fig scale' to more kafka boxen:
+    hostname: pythonlibrdkafka_kafka0_1
+    environment:
+        - KAFKA_BROKER_ID=0
+        - KAFKA_NUM_PARTITIONS=16
+    image: kafkadocker_kafka0 # build this first, from https://bitbucket.org/yungchin/kafka-docker
+    links:
+        - zookeeper:zk
+test:
+    build: .
+    volumes:
+        - .:/srv/python-librdkafka
+        #- ../librdkafka:/srv/librdkafka
+    working_dir: /srv/python-librdkafka
+    links:
+        - kafka0
