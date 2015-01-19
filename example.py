@@ -1,18 +1,19 @@
-from rd_kafka import Config, TopicConfig, Producer, Consumer
+from rd_kafka import Producer, Consumer
 
 
 def run():
 
     ## Configuration:
 
-    config = Config()
-    config.set("metadata.broker.list", "kafka0:9092")
-    config.set("queue.buffering.max.ms", "10")
-    config.set("dr_msg_cb", delivery_report_callback) # see further down
-
-    topic_config = TopicConfig()
-    # let's drop in a very dumb partitioner...
-    topic_config.set("partitioner", lambda key, partitions: partitions[0])
+    config = {
+        "metadata.broker.list": "kafka0:9092",
+        "queue.buffering.max.ms": "10", # FIXME should accept int value
+        "dr_msg_cb": delivery_report_callback, # see further down
+        }
+    topic_config = {
+        # let's drop in a very dumb partitioner:
+        "partitioner": lambda key, partitions: partitions[0],
+        }
 
 
     ## Produce:

@@ -4,7 +4,7 @@ import time
 import unittest
 
 from rd_kafka import *
-# import example
+import example
 
 
 kafka_docker = "kafka0:9092" # TODO make portable (see fig.yml etc)
@@ -12,7 +12,6 @@ kafka_docker = "kafka0:9092" # TODO make portable (see fig.yml etc)
 
 class ExampleTestCase(unittest.TestCase):
     """ Make sure example.py is still current """
-    @unittest.skip("example needs config_dict update") # FIXME
     def test_example_py(self):
         example.run()
 
