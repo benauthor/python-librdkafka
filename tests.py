@@ -19,12 +19,11 @@ class ExampleTestCase(unittest.TestCase):
 class QueueReaderTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.config = Config()
-        cls.config.set("metadata.broker.list", kafka_docker)
+        cls.config = {"metadata.broker.list": kafka_docker}
 
         # make sure we have some messages:
         p = Producer(cls.config)
-        t = p.open_topic("TopicPartitionTestCase", TopicConfig())
+        t = p.open_topic("TopicPartitionTestCase")
         for _ in range(1000):
             t.produce(b"boohoohoo")
         # force flushing queues:
@@ -32,8 +31,7 @@ class QueueReaderTestCase(unittest.TestCase):
 
     def setUp(self):
         self.consumer = Consumer(self.config)
-        self.topic = self.consumer.open_topic(
-                            "TopicPartitionTestCase", TopicConfig())
+        self.topic = self.consumer.open_topic("TopicPartitionTestCase")
         self.reader = self.topic.open_partition(0, start_offset=0)
 
     def test_double_instantiations(self):
@@ -42,8 +40,7 @@ class QueueReaderTestCase(unittest.TestCase):
 
         self.reader.close()
         second_reader = self.topic.open_partition(0, 0)
-        msg = second_reader.consume()
-        self.assertEqual(0, msg.offset)
+        msg = second_reader.consume() # should succeed without exceptions
         # Now that second_reader has opened the partition again, reader should
         # still refuse to read from it:
         with self.assertRaises(PartitionReaderException):
@@ -52,7 +49,7 @@ class QueueReaderTestCase(unittest.TestCase):
     def test_magic_offsets(self):
         self.reader.close()
         r = self.topic.open_partition(0, self.topic.OFFSET_BEGINNING)
-        self.assertIsNotNone(r.consume().offset)
+        self.assertIsNotNone(r.consume())
 
         r.close()
         r = self.topic.open_partition(0, self.topic.OFFSET_END)
@@ -68,12 +65,11 @@ class QueueReaderTestCase(unittest.TestCase):
         self.assertEqual(offset_e - r.consume().offset, 9)
 
     def test_multi_topic_reader(self):
-        top2 = self.consumer.open_topic(
-                       "TopicPartitionTestCasePlusPlus", TopicConfig())
+        top2 = self.consumer.open_topic("TopicPartitionTestCasePlusPlus")
         # write some stuff:
         stuff = _random_str()
         p = Producer(self.config)
-        t = p.open_topic("TopicPartitionTestCasePlusPlus", TopicConfig())
+        t = p.open_topic("TopicPartitionTestCasePlusPlus")
         t.produce(stuff, partition=0)
 
         r = self.consumer.new_queue()
@@ -95,8 +91,7 @@ class QueueReaderTestCase(unittest.TestCase):
 class ConfigTestCase(unittest.TestCase):
     @classmethod
     def setUp(self):
-        self.config = Config()
-        self.config.set("metadata.broker.list", kafka_docker)
+        self.config = {"metadata.broker.list": kafka_docker}
 
     def test_set_dr_msg_cb(self):
         n_msgs = 100
@@ -107,10 +102,9 @@ class ConfigTestCase(unittest.TestCase):
             self.assertEqual(bytes(msg.payload), msg_payload)
             call_counter[0] += 1
 
-        self.config.set("dr_msg_cb", count_callbacks)
+        self.config["dr_msg_cb"] = count_callbacks
         producer = Producer(self.config)
-        tc = TopicConfig()
-        t = producer.open_topic("test_set_dr_msg_cb", tc)
+        t = producer.open_topic("test_set_dr_msg_cb")
 
         for _ in range(n_msgs):
             t.produce(msg_payload)
@@ -120,8 +114,7 @@ class ConfigTestCase(unittest.TestCase):
 class TopicConfigTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.config = Config()
-        cls.config.set("metadata.broker.list", kafka_docker)
+        cls.config = {"metadata.broker.list": kafka_docker}
         cls.producer = Producer(cls.config)
 
     def test_set_partitioner_cb(self):
@@ -135,9 +128,8 @@ class TopicConfigTestCase(unittest.TestCase):
             # try special return-value None a few times, too:
             return random.choice(part_list) if call_counter[0] % 20 else None
 
-        tc = TopicConfig()
-        tc.set("partitioner", count_callbacks)
-        t = self.producer.open_topic("test_set_partitioner_cb", tc)
+        topic_config = {"partitioner": count_callbacks}
+        t = self.producer.open_topic("test_set_partitioner_cb", topic_config)
 
         for _ in range(n_msgs):
             t.produce(b"partition me", key=test_key)
@@ -147,18 +139,17 @@ class TopicConfigTestCase(unittest.TestCase):
 class MsgOpaquesTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.config = Config()
-        cls.config.set("metadata.broker.list", kafka_docker)
-        cls.config.set("queue.buffering.max.ms", "10")
+        cls.config = {
+                "metadata.broker.list": kafka_docker,
+                "queue.buffering.max.ms": "10"}
 
         cls.msg_opaques = defaultdict(int)
         def dr_msg_cb(msg, **kwargs):
             cls.msg_opaques[id(msg.opaque)] += 1
-        cls.config.set("dr_msg_cb", dr_msg_cb)
+        cls.config["dr_msg_cb"] = dr_msg_cb
 
         cls.producer = Producer(cls.config)
-        cls.topic = cls.producer.open_topic(
-                        "MsgOpaquesTestCase", TopicConfig())
+        cls.topic = cls.producer.open_topic("MsgOpaquesTestCase")
 
     def setUp(self):
         self.msg_opaques.clear()
@@ -181,6 +172,45 @@ class MsgOpaquesTestCase(unittest.TestCase):
                 self.producer)
         for o in objs:
             self.assertEqual(n, self.msg_opaques[id(o)])
+
+
+class ProduceConsumeTestCase(unittest.TestCase):
+    """ Seemingly unnecessary round-trip-test; cf bitbucket issue #2 """
+
+    def test_produce_consume(self):
+        config = {
+                "metadata.broker.list": kafka_docker,
+                "queue.buffering.max.ms": "10"}
+
+        delivery_reports = {}
+        def dr_msg_cb(msg, **kwargs):
+            delivery_reports[str(msg.key)] = msg.cdata.err # FIXME ugly need for str-coercion
+
+        config["dr_msg_cb"] = dr_msg_cb
+        producer = Producer(config)
+        p_topic = producer.open_topic("ProduceConsumeTestCase")
+
+        consumer = Consumer(config)
+        reader = consumer.new_queue()
+        c_topic = consumer.open_topic("ProduceConsumeTestCase")
+        for partition_id in range(20):
+            try: # hacky way to read all partitions without getting metadata:
+                reader.add_toppar(c_topic, partition_id, c_topic.OFFSET_END)
+            except: # no such partition # FIXME we don't actually get exceptions!
+                break
+
+        del config # this shouldn't break anything; it's just here to double-check
+                   # that indeed it really doesn't
+        for round_trips in range(10):
+            k = _random_str()
+            p_topic.produce("whatevah", key=k)
+            _poll_until_true(lambda: k in delivery_reports, producer)
+            self.assertEqual(delivery_reports[k], 0) # ie no errors
+
+            while True: # ugly pattern for getting a message out :(
+                msg = reader.consume()
+                if msg is not None: break
+            self.assertEqual(str(msg.key), k)
 
 
 def _poll_until_true(fbool, kafka_handle, timeout=10):
