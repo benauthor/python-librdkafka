@@ -40,8 +40,7 @@ class QueueReaderTestCase(unittest.TestCase):
 
         self.reader.close()
         second_reader = self.topic.open_partition(0, 0)
-        msg = second_reader.consume()
-        self.assertEqual(0, msg.offset)
+        msg = second_reader.consume() # should succeed without exceptions
         # Now that second_reader has opened the partition again, reader should
         # still refuse to read from it:
         with self.assertRaises(PartitionReaderException):
@@ -50,7 +49,7 @@ class QueueReaderTestCase(unittest.TestCase):
     def test_magic_offsets(self):
         self.reader.close()
         r = self.topic.open_partition(0, self.topic.OFFSET_BEGINNING)
-        self.assertIsNotNone(r.consume().offset)
+        self.assertIsNotNone(r.consume())
 
         r.close()
         r = self.topic.open_partition(0, self.topic.OFFSET_END)
