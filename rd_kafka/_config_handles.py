@@ -19,10 +19,8 @@ def conf_set_dr_msg_cb(conf_handle, callback_func):
         try:
             # XXX modify KafkaHandle so we can wrap it here and pass it on?
             msg = Message(msg, manage_memory=False)
-            callback_func(msg, opaque=None)
-            # TODO the above should become opaque=_ffi.from_handle(opaque)
-            # but this requires that we always configure the opaque (eg.
-            # set it to None by default)
+            opaque = None if opaque == _ffi.NULL else _ffi.from_handle(opaque)
+            callback_func(msg, opaque=opaque)
         finally:
             # Clear the handle we created for the msg_opaque, as we don't
             # expect to see it after this:
