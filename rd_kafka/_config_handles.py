@@ -76,12 +76,16 @@ class ConfigManager(object):
         """
         Set python callback to accept statistics data
 
+        Pass a callback_func with signature f(stats, **kwargs), where 'stats'
+        is a dict of librdkafka statistics, and kwargs currently provides
+        'kafka_handle' and 'opaque'
         """
         @_ffi.callback("int (rd_kafka_t *, char *, size_t, void *)")
         def func(kafka_handle, stats, stats_len, opaque):
-            # TODO actually use callback_func
-            print json.loads(_ffi.string(stats, maxlen=stats_len))
-            return 0
+            stats = json.loads(_ffi.string(stats, maxlen=stats_len))
+            opq = None if opaque == _ffi.NULL else _ffi.from_handle(opaque)
+            callback_func(stats, kafka_handle=self.kafka_handle, opaque=opq)
+            return 0 # tells librdkafka to free the json pointer
 
         _lib.rd_kafka_conf_set_stats_cb(self.cdata, func)
         self.callbacks["stats_cb"] = func
