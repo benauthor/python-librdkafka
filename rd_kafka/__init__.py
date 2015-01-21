@@ -50,21 +50,10 @@ class KafkaHandle(object):
         """
         config_dict -- A dict with keys as per librdkafka's CONFIGURATION.md
         """
-        self.conf_cb_man = _config_handles.ConfigCbManager(self)
-        conf = _lib.rd_kafka_conf_new()
-        for name, value in config_dict.items():
-            try:
-                self.conf_cb_man.set_callback(conf, name, value)
-            except AttributeError:
-                errstr = _mk_errstr()
-                res = _lib.rd_kafka_conf_set(
-                          conf, name, value, errstr, len(errstr))
-                if res != _lib.RD_KAFKA_CONF_OK:
-                    raise LibrdkafkaException(_ffi.string(errstr))
-
+        self.config_man = _config_handles.ConfigManager(self, config_dict)
         errstr = _mk_errstr()
         self.cdata = _lib.rd_kafka_new(
-                         handle_type, conf, errstr, len(errstr))
+                handle_type, self.config_man.pop_config(), errstr, len(errstr))
         if self.cdata == _ffi.NULL:
             raise LibrdkafkaException(_ffi.string(errstr))
 

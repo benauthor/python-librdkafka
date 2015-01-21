@@ -2,23 +2,51 @@ import json
 
 from .headers import ffi as _ffi, lib as _lib
 from .message import Message
-from .utils import _voidp2bytes
+from . import utils
 
 
-class ConfigCbManager(object):
-    """ Helper class for KafkaHandle that manages callback handles """
+class ConfigManager(object):
+    """
+    Helper class for KafkaHandle that manages callback handles
 
-    def __init__(self, kafka_handle):
+    Usage notes: as this class manages cffi handles internally, it should be
+    kept alive for as long as the kafka_handle is alive.  After initing it
+    with a config dict, the thus constructed rd_kafka_conf_t handle should be
+    obtained via pop_config()
+    """
+
+    def __init__(self, kafka_handle, config_dict):
         self.kafka_handle = kafka_handle
+        self.cdata = _lib.rd_kafka_conf_new() # NB see pop_config() below
         self.callbacks = {} # keeps cffi callback handles alive
+        self.set(config_dict)
 
-    def set_callback(self, conf_handle, name, callback_func):
-        getattr(self, "set_" + name)(conf_handle, callback_func)
+    def pop_config(self):
+        """
+        Return rd_kafka_conf_t handle after removing it from self
+        
+        (Awkward but needed, because rd_kafka_new() destroys the conf struct)
+        """
+        cdata, self.cdata = self.cdata, None
+        return cdata
 
-    def set_dr_cb(self, conf_handle, callback_func):
+    def set(self, config_dict):
+        if self.cdata is None:
+            raise LibrdkafkaException("Called after pop_config()?")
+        for name, value in config_dict.items():
+            try: # if this is a callback setter:
+                getattr(self, "set_" + name)(value)
+            except AttributeError:
+                errstr = utils._mk_errstr()
+                res = _lib.rd_kafka_conf_set(
+                          self.cdata, name, value, errstr, len(errstr))
+                if res != _lib.RD_KAFKA_CONF_OK:
+                    raise LibrdkafkaException(_ffi.string(errstr))
+
+    def set_dr_cb(self, callback_func):
         raise NotImplementedError("Try dr_msg_cb instead?")
 
-    def set_dr_msg_cb(self, conf_handle, callback_func):
+    def set_dr_msg_cb(self, callback_func):
         """
         Set python callback to accept delivery reports
 
@@ -41,10 +69,10 @@ class ConfigCbManager(object):
                 # expect to see it after this:
                 msg._free_opaque()
 
-        _lib.rd_kafka_conf_set_dr_msg_cb(conf_handle, func)
+        _lib.rd_kafka_conf_set_dr_msg_cb(self.cdata, func)
         self.callbacks["dr_msg_cb"] = func
 
-    def set_stats_cb(self, conf_handle, callback_func):
+    def set_stats_cb(self, callback_func):
         """
         Set python callback to accept statistics data
 
@@ -55,7 +83,7 @@ class ConfigCbManager(object):
             print json.loads(_ffi.string(stats, maxlen=stats_len))
             return 0
 
-        _lib.rd_kafka_conf_set_stats_cb(conf_handle, func)
+        _lib.rd_kafka_conf_set_stats_cb(self.cdata, func)
         self.callbacks["stats_cb"] = func
 
 
@@ -73,7 +101,7 @@ def topic_conf_set_partitioner_cb(topic_conf_handle, callback_func):
     @_ffi.callback("int32_t (const rd_kafka_topic_t *, const void *,"
                    "         size_t, int32_t, void *, void *)")
     def func(topic, key, key_len, partition_cnt, t_opaque, m_opaque):
-        key = _voidp2bytes(key, key_len)[:]
+        key = utils._voidp2bytes(key, key_len)[:]
         partition_list = range(partition_cnt)
         while partition_list:
             p = callback_func(key, partition_list)
