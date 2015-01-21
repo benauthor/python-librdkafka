@@ -47,17 +47,15 @@ class KafkaHandle(object):
     topic_type = BaseTopic
 
     def __init__(self, handle_type, config_dict):
-        self.conf_callbacks = [] # keeps callback handles alive
+        self.conf_cb_man = _config_handles.ConfigCbManager(self)
         conf = _lib.rd_kafka_conf_new()
         for name, value in config_dict.items():
             if name == "dr_cb":
                 raise NotImplementedError("Try dr_msg_cb instead?")
             elif name == "dr_msg_cb":
-                self.conf_callbacks.append(
-                        _config_handles.conf_set_dr_msg_cb(conf, value))
+                self.conf_cb_man.set_dr_msg_cb(conf, value)
             elif name == "stats_cb":
-                self.conf_callbacks.append(
-                        _config_handles.conf_set_stats_cb(conf, value))
+                self.conf_cb_man.set_stats_cb(conf, value)
             else:
                 errstr = _mk_errstr()
                 res = _lib.rd_kafka_conf_set(
