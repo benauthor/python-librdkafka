@@ -22,18 +22,20 @@ class ConfigCbManager(object):
         """
         Set python callback to accept delivery reports
 
-        Pass a callback_func with signature f(msg, **kwargs), where msg will be
-        a message.Message and kwargs is currently empty (but should eventually
-        provide the KafkaHandle and the configured opaque handle)
+        Pass a callback_func with signature f(msg, **kwargs), where msg will
+        be a message.Message and kwargs currently provides 'kafka_handle' and
+        'opaque'
         """
         @_ffi.callback("void (rd_kafka_t *,"
                        "      const rd_kafka_message_t *, void *)")
         def func(kafka_handle, msg, opaque):
             try:
-                # XXX modify KafkaHandle so we can wrap it here and pass it on?
                 msg = Message(msg, manage_memory=False)
-                opaque = None if opaque == _ffi.NULL else _ffi.from_handle(opaque)
-                callback_func(msg, opaque=opaque)
+                opq = None if opaque == _ffi.NULL else _ffi.from_handle(opaque)
+                # Note that here, kafka_handle will point to the same data as
+                # self.kafka_handle.cdata, so it makes more sense to hand users
+                # the richer self.kafka_handle
+                callback_func(msg, kafka_handle=self.kafka_handle, opaque=opq)
             finally:
                 # Clear the handle we created for the msg_opaque, as we don't
                 # expect to see it after this:
