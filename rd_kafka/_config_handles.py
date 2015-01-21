@@ -12,6 +12,12 @@ class ConfigCbManager(object):
         self.kafka_handle = kafka_handle
         self.callbacks = {} # keeps cffi callback handles alive
 
+    def set_callback(self, conf_handle, name, callback_func):
+        getattr(self, "set_" + name)(conf_handle, callback_func)
+
+    def set_dr_cb(self, conf_handle, callback_func):
+        raise NotImplementedError("Try dr_msg_cb instead?")
+
     def set_dr_msg_cb(self, conf_handle, callback_func):
         """
         Set python callback to accept delivery reports
