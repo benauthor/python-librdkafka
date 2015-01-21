@@ -47,6 +47,11 @@ ffi.cdef(
                                           rd_kafka_t *rk,
                                           const rd_kafka_message_t * rkmessage,
                                           void *opaque));
+    void rd_kafka_conf_set_stats_cb (rd_kafka_conf_t *conf,
+                                     int (*stats_cb) (rd_kafka_t *rk,
+                                                      char *json,
+                                                      size_t json_len,
+                                                      void *opaque));
 
     rd_kafka_topic_conf_t *rd_kafka_topic_conf_new (void);
     void rd_kafka_topic_conf_destroy (rd_kafka_topic_conf_t *topic_conf);

@@ -1,3 +1,5 @@
+import json
+
 from .headers import ffi as _ffi, lib as _lib
 from .message import Message
 from .utils import _voidp2bytes
@@ -27,6 +29,21 @@ def conf_set_dr_msg_cb(conf_handle, callback_func):
             msg._free_opaque()
 
     _lib.rd_kafka_conf_set_dr_msg_cb(conf_handle, func)
+    return func
+
+
+def conf_set_stats_cb(conf_handle, callback_func):
+    """
+    Set python callback to accept statistics data
+
+    NB returns a cffi callback handle that must be kept alive
+    """
+    @_ffi.callback("int (rd_kafka_t *, char *, size_t, void *)")
+    def func(kafka_handle, stats, stats_len, opaque):
+        # TODO actually use callback_func
+        print json.loads(_ffi.string(stats, maxlen=stats_len))
+        return 0
+    _lib.rd_kafka_conf_set_stats_cb(conf_handle, func)
     return func
 
 

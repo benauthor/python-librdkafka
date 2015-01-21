@@ -55,6 +55,9 @@ class KafkaHandle(object):
             elif name == "dr_msg_cb":
                 self.conf_callbacks.append(
                         _config_handles.conf_set_dr_msg_cb(conf, value))
+            elif name == "stats_cb":
+                self.conf_callbacks.append(
+                        _config_handles.conf_set_stats_cb(conf, value))
             else:
                 errstr = _mk_errstr()
                 res = _lib.rd_kafka_conf_set(
