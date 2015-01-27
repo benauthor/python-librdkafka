@@ -42,6 +42,9 @@ class BaseTopic(object):
     def name(self):
         return _ffi.string(_lib.rd_kafka_topic_name(self.cdata))
 
+    def metadata(self, timeout_ms=1000):
+        return _metadata(self.kafka_handle, topic=self, timeout_ms=timeout_ms)
+
 
 class KafkaHandle(object):
     topic_type = BaseTopic
@@ -62,6 +65,9 @@ class KafkaHandle(object):
 
     def open_topic(self, name, topic_config_dict={}):
         return self.topic_type(name, self, topic_config_dict)
+
+    def metadata(self, all_topics=True, timeout_ms=1000):
+        return _metadata(self, all_topics=all_topics, timeout_ms=timeout_ms)
 
     def poll(self, timeout_ms=1000):
         return _lib.rd_kafka_poll(self.cdata, timeout_ms)
@@ -97,46 +103,6 @@ class Producer(KafkaHandle):
         super(Producer, self).__del__()
 
 
-class Metadata(object):
-    def __init__(self, kafka_handle, topic=None, timeout_ms=1000):
-        self.kafka_handle = kafka_handle
-        self.topic = topic
-        self.all_topics = 0 # TODO expose this option usefully?
-        self.refresh(timeout_ms)
-
-    def refresh(self, timeout_ms=1000):
-        topic = _ffi.NULL if self.topic is None else self.topic.cdata
-        meta_dp = _ffi.new("const rd_kafka_metadata_t **")
-        err = _lib.rd_kafka_metadata(
-                  self.kafka_handle.cdata, self.all_topics,
-                  topic, meta_dp, timeout_ms)
-        if err != _lib.RD_KAFKA_RESP_ERR_NO_ERROR:
-            raise LibrdkafkaException(_err2str(err))
-
-        self.dict = d = {}
-        meta = meta_dp[0]
-        d['brokers'] = {}
-        for i in range(meta.broker_cnt):
-            b = meta.brokers[i]
-            d['brokers'][b.id] = dict(host=_ffi.string(b.host), port=b.port)
-        d['topics'] = {}
-        for i in range(meta.topic_cnt):
-            t = meta.topics[i]
-            d['topics'][_ffi.string(t.topic)] = topic_d = {}
-            topic_d['partitions'] = {}
-            for j in range(t.partition_cnt):
-                p = t.partitions[j]
-                topic_d['partitions'][p.id] = dict(
-                        err=_err2str(p.err), leader=p.leader,
-                        replicas=[p.replicas[r] for r in range(p.replica_cnt)],
-                        isrs=[p.isrs[r] for r in range(p.isr_cnt)])
-            topic_d['err'] = _err2str(t.err)
-        d['orig_broker_id'] = meta.orig_broker_id
-        d['orig_broker_name'] = _ffi.string(meta.orig_broker_name)
-
-        _lib.rd_kafka_metadata_destroy(meta_dp[0])
-
-
 class ConsumerTopic(BaseTopic):
     OFFSET_BEGINNING = QueueReader.OFFSET_BEGINNING
     OFFSET_END = QueueReader.OFFSET_END
@@ -156,3 +122,42 @@ class Consumer(KafkaHandle):
 
     def new_queue(self):
         return partition_reader.QueueReader(self)
+
+
+def _metadata(kafka_handle, all_topics=True, topic=None, timeout_ms=1000):
+    """
+    Return dict with all information retrievable from librdkafka's Metadata API
+    """
+    topic = _ffi.NULL if topic is None else topic.cdata
+    meta_dp = _ffi.new("const rd_kafka_metadata_t **")
+    err = _lib.rd_kafka_metadata(kafka_handle.cdata,
+                                 int(all_topics),
+                                 topic,
+                                 meta_dp,
+                                 timeout_ms)
+    if err != _lib.RD_KAFKA_RESP_ERR_NO_ERROR:
+        raise LibrdkafkaException(_err2str(err))
+
+    d = {}
+    meta = meta_dp[0]
+    d['brokers'] = {}
+    for i in range(meta.broker_cnt):
+        b = meta.brokers[i]
+        d['brokers'][b.id] = dict(host=_ffi.string(b.host), port=b.port)
+    d['topics'] = {}
+    for i in range(meta.topic_cnt):
+        t = meta.topics[i]
+        d['topics'][_ffi.string(t.topic)] = topic_d = {}
+        topic_d['partitions'] = {}
+        for j in range(t.partition_cnt):
+            p = t.partitions[j]
+            topic_d['partitions'][p.id] = dict(
+                    err=_err2str(p.err), leader=p.leader,
+                    replicas=[p.replicas[r] for r in range(p.replica_cnt)],
+                    isrs=[p.isrs[r] for r in range(p.isr_cnt)])
+        topic_d['err'] = _err2str(t.err)
+    d['orig_broker_id'] = meta.orig_broker_id
+    d['orig_broker_name'] = _ffi.string(meta.orig_broker_name)
+
+    _lib.rd_kafka_metadata_destroy(meta_dp[0])
+    return d

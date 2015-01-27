@@ -15,7 +15,6 @@ test:
     build: .
     volumes:
         - .:/srv/python-librdkafka
-        #- ../librdkafka:/srv/librdkafka
     working_dir: /srv/python-librdkafka
     links:
         - kafka0
