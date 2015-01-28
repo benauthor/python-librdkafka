@@ -6,15 +6,7 @@ from .message import Message
 from . import utils
 
 
-MAP_SYSLOG_LEVELS = { # cf sys/syslog.h
-        0: logging.CRITICAL,
-        1: logging.CRITICAL,
-        2: logging.CRITICAL,
-        3: logging.ERROR,
-        4: logging.WARNING,
-        5: logging.INFO,
-        6: logging.INFO,
-        7: logging.DEBUG}
+logger = logging.getLogger(__name__)
 
 
 class ConfigManager(object):
@@ -96,16 +88,12 @@ class ConfigManager(object):
         """
         Set a logging callback with the same signature as logging.Logger.log()
         """
-        # XXX maybe we shouldn't map to python logging levels here, as it sort
-        #     of forces the standard logging lib on the user?
         @_ffi.callback("void (rd_kafka_t *, int, const char*, const char *)")
-        def func(kafka_handle, syslog_level, syslog_facility, message):
-            callback_func(
-                    lvl=MAP_SYSLOG_LEVELS[syslog_level],
-                    msg=_ffi.string(message),
-                    extra=dict(syslog_level=syslog_level,
-                               syslog_facility=_ffi.string(syslog_facility),
-                               kafka_handle=kafka_handle))
+        def func(kafka_handle, syslog_level, facility, message):
+            callback_func(syslog_level=syslog_level,
+                          facility=_ffi.string(facility),
+                          message=_ffi.string(message),
+                          kafka_handle=self.kafka_handle)
 
         _lib.rd_kafka_conf_set_log_cb(self.cdata, func)
         self.callbacks["log_cb"] = func
@@ -157,3 +145,31 @@ def topic_conf_set_partitioner_cb(topic_conf_handle, callback_func):
 
     _lib.rd_kafka_topic_conf_set_partitioner_cb(topic_conf_handle, func)
     return func
+
+
+class StdlibLoggerCallback(object):
+    """
+    Convenience class to tie ConfigManager.set_log_cb() to a logging.Logger
+
+    Usage: config_dict["log_cb"] = StdlibLoggerCallback(logger_instance)
+    """
+    MAP_SYSLOG_LEVELS = { # cf sys/syslog.h
+            0: logging.CRITICAL,
+            1: logging.CRITICAL,
+            2: logging.CRITICAL,
+            3: logging.ERROR,
+            4: logging.WARNING,
+            5: logging.INFO,
+            6: logging.INFO,
+            7: logging.DEBUG}
+
+    def __init__(self, logger=logger):
+        self.logger = logger
+
+    def __call__(self, syslog_level, facility, message, kafka_handle):
+        self.logger.log(
+                self.MAP_SYSLOG_LEVELS[syslog_level],
+                message,
+                extra=dict(syslog_level=syslog_level,
+                           facility=facility,
+                           kafka_handle=kafka_handle))
