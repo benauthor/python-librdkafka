@@ -47,6 +47,16 @@ ffi.cdef(
                                           rd_kafka_t *rk,
                                           const rd_kafka_message_t * rkmessage,
                                           void *opaque));
+    void rd_kafka_conf_set_error_cb (rd_kafka_conf_t *conf,
+                                     void  (*error_cb) (rd_kafka_t *rk,
+                                                        int err,
+                                                        const char *reason,
+                                                        void *opaque));
+    void rd_kafka_conf_set_log_cb (rd_kafka_conf_t *conf,
+                                   void (*log_cb) (const rd_kafka_t *rk,
+                                                   int level,
+                                                   const char *fac,
+                                                   const char *buf));
     void rd_kafka_conf_set_stats_cb (rd_kafka_conf_t *conf,
                                      int (*stats_cb) (rd_kafka_t *rk,
                                                       char *json,

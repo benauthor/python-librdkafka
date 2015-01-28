@@ -1,8 +1,20 @@
 import json
+import logging
 
 from .headers import ffi as _ffi, lib as _lib
 from .message import Message
 from . import utils
+
+
+MAP_SYSLOG_LEVELS = { # cf sys/syslog.h
+        0: logging.CRITICAL,
+        1: logging.CRITICAL,
+        2: logging.CRITICAL,
+        3: logging.ERROR,
+        4: logging.WARNING,
+        5: logging.INFO,
+        6: logging.INFO,
+        7: logging.DEBUG}
 
 
 class ConfigManager(object):
@@ -24,7 +36,7 @@ class ConfigManager(object):
     def pop_config(self):
         """
         Return rd_kafka_conf_t handle after removing it from self
-        
+
         (Awkward but needed, because rd_kafka_new() destroys the conf struct)
         """
         cdata, self.cdata = self.cdata, None
@@ -71,6 +83,32 @@ class ConfigManager(object):
 
         _lib.rd_kafka_conf_set_dr_msg_cb(self.cdata, func)
         self.callbacks["dr_msg_cb"] = func
+
+    def set_error_cb(self, callback_func):
+        """
+        """
+        @_ffi.callback("void (rd_kafka_t *, int, const char *, void *)")
+        def func(kafka_handle, err, reason, opaque):
+            pass # TODO (if unset, errors will flow to log_cb instead, anyway)
+        raise NotImplementedError
+
+    def set_log_cb(self, callback_func):
+        """
+        Set a logging callback with the same signature as logging.Logger.log()
+        """
+        # XXX maybe we shouldn't map to python logging levels here, as it sort
+        #     of forces the standard logging lib on the user?
+        @_ffi.callback("void (rd_kafka_t *, int, const char*, const char *)")
+        def func(kafka_handle, syslog_level, syslog_facility, message):
+            callback_func(
+                    lvl=MAP_SYSLOG_LEVELS[syslog_level],
+                    msg=_ffi.string(message),
+                    extra=dict(syslog_level=syslog_level,
+                               syslog_facility=_ffi.string(syslog_facility),
+                               kafka_handle=kafka_handle))
+
+        _lib.rd_kafka_conf_set_log_cb(self.cdata, func)
+        self.callbacks["log_cb"] = func
 
     def set_stats_cb(self, callback_func):
         """
