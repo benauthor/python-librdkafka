@@ -60,11 +60,11 @@ class ConfigManager(object):
         """
         @_ffi.callback("void (rd_kafka_t *,"
                        "      const rd_kafka_message_t *, void *)")
-        def func(kafka_handle, msg, opaque):
+        def func(rdk_handle, msg, opaque):
             try:
                 msg = Message(msg, manage_memory=False)
                 opq = None if opaque == _ffi.NULL else _ffi.from_handle(opaque)
-                # Note that here, kafka_handle will point to the same data as
+                # Note that here, rdk_handle will point to the same data as
                 # self.kafka_handle.cdata, so it makes more sense to hand users
                 # the richer self.kafka_handle
                 callback_func(msg, kafka_handle=self.kafka_handle, opaque=opq)
@@ -80,7 +80,7 @@ class ConfigManager(object):
         """
         """
         @_ffi.callback("void (rd_kafka_t *, int, const char *, void *)")
-        def func(kafka_handle, err, reason, opaque):
+        def func(rdk_handle, err, reason, opaque):
             pass # TODO (if unset, errors will flow to log_cb instead, anyway)
         raise NotImplementedError
 
@@ -89,7 +89,7 @@ class ConfigManager(object):
         Set a logging callback with the same signature as logging.Logger.log()
         """
         @_ffi.callback("void (rd_kafka_t *, int, const char*, const char *)")
-        def func(kafka_handle, syslog_level, facility, message):
+        def func(rdk_handle, syslog_level, facility, message):
             callback_func(syslog_level=syslog_level,
                           facility=_ffi.string(facility),
                           message=_ffi.string(message),
@@ -107,7 +107,7 @@ class ConfigManager(object):
         'kafka_handle' and 'opaque'
         """
         @_ffi.callback("int (rd_kafka_t *, char *, size_t, void *)")
-        def func(kafka_handle, stats, stats_len, opaque):
+        def func(rdk_handle, stats, stats_len, opaque):
             stats = json.loads(_ffi.string(stats, maxlen=stats_len))
             opq = None if opaque == _ffi.NULL else _ffi.from_handle(opaque)
             callback_func(stats, kafka_handle=self.kafka_handle, opaque=opq)
