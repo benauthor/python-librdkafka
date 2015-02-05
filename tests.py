@@ -188,7 +188,8 @@ class ProduceConsumeTestCase(unittest.TestCase):
 
         config["dr_msg_cb"] = dr_msg_cb
         producer = Producer(config)
-        p_topic = producer.open_topic("ProduceConsumeTestCase")
+        p_topic = producer.open_topic("ProduceConsumeTestCase",
+                                      {"request.required.acks": "-1"})
 
         consumer = Consumer(config)
         reader = consumer.new_queue()

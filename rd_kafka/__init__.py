@@ -19,14 +19,14 @@ class BaseTopic(object):
 
         self.conf_callbacks = [] # keeps callback handles alive
         conf = _lib.rd_kafka_topic_conf_new()
-        for name, value in topic_config_dict.items():
-            if name == "partitioner":
+        for k, v in topic_config_dict.items():
+            if k == "partitioner":
                 self.conf_callbacks.append(
-                    _config_handles.topic_conf_set_partitioner_cb(conf, value))
+                    _config_handles.topic_conf_set_partitioner_cb(conf, v))
             else:
                 errstr = _mk_errstr()
                 res = _lib.rd_kafka_topic_conf_set(
-                          conf, name, value, errstr, len(errstr))
+                            conf, k, v, errstr, len(errstr))
                 if res != _lib.RD_KAFKA_CONF_OK:
                     raise LibrdkafkaException(_ffi.string(errstr))
 
