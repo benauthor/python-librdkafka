@@ -50,24 +50,13 @@ class KafkaHandle(object):
     topic_type = BaseTopic
 
     def __init__(self, handle_type, config_dict):
-        self.conf_callbacks = [] # keeps callback handles alive
-        conf = _lib.rd_kafka_conf_new()
-        for name, value in config_dict.items():
-            if name == "dr_cb":
-                raise NotImplementedError("Try dr_msg_cb instead?")
-            elif name == "dr_msg_cb":
-                self.conf_callbacks.append(
-                        _config_handles.conf_set_dr_msg_cb(conf, value))
-            else:
-                errstr = _mk_errstr()
-                res = _lib.rd_kafka_conf_set(
-                          conf, name, value, errstr, len(errstr))
-                if res != _lib.RD_KAFKA_CONF_OK:
-                    raise LibrdkafkaException(_ffi.string(errstr))
-
+        """
+        config_dict -- A dict with keys as per librdkafka's CONFIGURATION.md
+        """
+        self.config_man = _config_handles.ConfigManager(self, config_dict)
         errstr = _mk_errstr()
         self.cdata = _lib.rd_kafka_new(
-                         handle_type, conf, errstr, len(errstr))
+                handle_type, self.config_man.pop_config(), errstr, len(errstr))
         if self.cdata == _ffi.NULL:
             raise LibrdkafkaException(_ffi.string(errstr))
 

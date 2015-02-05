@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="rd_kafka",
-    version="0.0.0.dev0",
+    version="0.0.0.dev1",
     description="Python wrapper for the Apache Kafka client-library librdkafka",
     url="https://bitbucket.org/yungchin/python-librdkafka",
     author="Yung-Chin Oei",
