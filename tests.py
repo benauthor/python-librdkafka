@@ -7,7 +7,7 @@ from rd_kafka import *
 import example
 
 
-kafka_docker = "kafka0:9092" # TODO make portable (see fig.yml etc)
+kafka_docker = "kafka:9092" # TODO make portable (see fig.yml etc)
 
 
 class ExampleTestCase(unittest.TestCase):

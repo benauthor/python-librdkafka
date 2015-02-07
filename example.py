@@ -6,7 +6,7 @@ def run():
     ## Configuration:
 
     config = {
-        "metadata.broker.list": "kafka0:9092",
+        "metadata.broker.list": "kafka:9092",
         "queue.buffering.max.ms": "10", # FIXME should accept int value
         "dr_msg_cb": delivery_report_callback, # see further down
         }
