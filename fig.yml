@@ -1,7 +1,7 @@
 zookeeper:
-    image: wurstmeister/zookeeper
+    image: jplock/zookeeper:3.4.6
 kafka:
-    image: yungchin/kafka-docker
+    image: yungchin/kafka-docker:0.8.2-1
     environment:
         - KAFKA_NUM_PARTITIONS=8
     links:
