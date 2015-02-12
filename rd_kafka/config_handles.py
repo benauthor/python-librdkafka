@@ -1,5 +1,6 @@
 import json
 import logging
+import weakref
 
 from .headers import ffi, lib
 from .message import Message
@@ -20,7 +21,7 @@ class ConfigManager(object):
     """
 
     def __init__(self, kafka_handle, config_dict):
-        self.kafka_handle = kafka_handle
+        self.kafka_handle = weakref.proxy(kafka_handle) # avoid circular ref
         self.cdata = lib.rd_kafka_conf_new() # NB see pop_config() below
         self.callbacks = {} # keeps cffi callback handles alive
         self.set(config_dict)
