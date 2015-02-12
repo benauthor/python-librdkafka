@@ -18,7 +18,7 @@ all of the following:
 import threading
 import uuid
 
-from headers import ffi as _ffi
+from headers import ffi
 
 
 _handles = {}
@@ -31,16 +31,16 @@ def get_handle(msg_opaque):
         if obj_id in _handles:
             _handles[obj_id][0] += 1
         else:
-            _handles[obj_id] = [1, _ffi.new_handle(msg_opaque)]
+            _handles[obj_id] = [1, ffi.new_handle(msg_opaque)]
     return _handles[obj_id][1]
 
 
 def from_handle(cdata_msg_opaque):
-    return _ffi.from_handle(cdata_msg_opaque)
+    return ffi.from_handle(cdata_msg_opaque)
 
 
 def drop_handle(cdata_msg_opaque):
-    obj_id = id(_ffi.from_handle(cdata_msg_opaque))
+    obj_id = id(ffi.from_handle(cdata_msg_opaque))
     with _lock:
         if _handles[obj_id][0] == 1:
             del _handles[obj_id]

@@ -1,7 +1,7 @@
 import json
 import logging
 
-from .headers import ffi as _ffi, lib as _lib
+from .headers import ffi, lib
 from .message import Message
 from . import utils
 
@@ -21,7 +21,7 @@ class ConfigManager(object):
 
     def __init__(self, kafka_handle, config_dict):
         self.kafka_handle = kafka_handle
-        self.cdata = _lib.rd_kafka_conf_new() # NB see pop_config() below
+        self.cdata = lib.rd_kafka_conf_new() # NB see pop_config() below
         self.callbacks = {} # keeps cffi callback handles alive
         self.set(config_dict)
 
@@ -42,10 +42,10 @@ class ConfigManager(object):
                 getattr(self, "set_" + name)(value)
             except AttributeError:
                 errstr = utils._mk_errstr()
-                res = _lib.rd_kafka_conf_set(
+                res = lib.rd_kafka_conf_set(
                           self.cdata, name, value, errstr, len(errstr))
-                if res != _lib.RD_KAFKA_CONF_OK:
-                    raise LibrdkafkaException(_ffi.string(errstr))
+                if res != lib.RD_KAFKA_CONF_OK:
+                    raise LibrdkafkaException(ffi.string(errstr))
 
     def set_dr_cb(self, callback_func):
         raise NotImplementedError("Try dr_msg_cb instead?")
@@ -58,12 +58,11 @@ class ConfigManager(object):
         be a message.Message and kwargs currently provides 'kafka_handle' and
         'opaque'
         """
-        @_ffi.callback("void (rd_kafka_t *,"
-                       "      const rd_kafka_message_t *, void *)")
+        @ffi.callback("void (rd_kafka_t *, const rd_kafka_message_t *, void *)")
         def func(rdk_handle, msg, opaque):
             try:
                 msg = Message(msg, manage_memory=False)
-                opq = None if opaque == _ffi.NULL else _ffi.from_handle(opaque)
+                opq = None if opaque == ffi.NULL else ffi.from_handle(opaque)
                 # Note that here, rdk_handle will point to the same data as
                 # self.kafka_handle.cdata, so it makes more sense to hand users
                 # the richer self.kafka_handle
@@ -73,13 +72,13 @@ class ConfigManager(object):
                 # expect to see it after this:
                 msg._free_opaque()
 
-        _lib.rd_kafka_conf_set_dr_msg_cb(self.cdata, func)
+        lib.rd_kafka_conf_set_dr_msg_cb(self.cdata, func)
         self.callbacks["dr_msg_cb"] = func
 
     def set_error_cb(self, callback_func):
         """
         """
-        @_ffi.callback("void (rd_kafka_t *, int, const char *, void *)")
+        @ffi.callback("void (rd_kafka_t *, int, const char *, void *)")
         def func(rdk_handle, err, reason, opaque):
             pass # TODO (if unset, errors will flow to log_cb instead, anyway)
         raise NotImplementedError
@@ -88,14 +87,14 @@ class ConfigManager(object):
         """
         Set a logging callback with the same signature as logging.Logger.log()
         """
-        @_ffi.callback("void (rd_kafka_t *, int, const char*, const char *)")
+        @ffi.callback("void (rd_kafka_t *, int, const char*, const char *)")
         def func(rdk_handle, syslog_level, facility, message):
             callback_func(syslog_level=syslog_level,
-                          facility=_ffi.string(facility),
-                          message=_ffi.string(message),
+                          facility=ffi.string(facility),
+                          message=ffi.string(message),
                           kafka_handle=self.kafka_handle)
 
-        _lib.rd_kafka_conf_set_log_cb(self.cdata, func)
+        lib.rd_kafka_conf_set_log_cb(self.cdata, func)
         self.callbacks["log_cb"] = func
 
     def set_stats_cb(self, callback_func):
@@ -106,14 +105,14 @@ class ConfigManager(object):
         is a dict of librdkafka statistics, and kwargs currently provides
         'kafka_handle' and 'opaque'
         """
-        @_ffi.callback("int (rd_kafka_t *, char *, size_t, void *)")
+        @ffi.callback("int (rd_kafka_t *, char *, size_t, void *)")
         def func(rdk_handle, stats, stats_len, opaque):
-            stats = json.loads(_ffi.string(stats, maxlen=stats_len))
-            opq = None if opaque == _ffi.NULL else _ffi.from_handle(opaque)
+            stats = json.loads(ffi.string(stats, maxlen=stats_len))
+            opq = None if opaque == ffi.NULL else ffi.from_handle(opaque)
             callback_func(stats, kafka_handle=self.kafka_handle, opaque=opq)
             return 0 # tells librdkafka to free the json pointer
 
-        _lib.rd_kafka_conf_set_stats_cb(self.cdata, func)
+        lib.rd_kafka_conf_set_stats_cb(self.cdata, func)
         self.callbacks["stats_cb"] = func
 
 
@@ -128,22 +127,22 @@ def topic_conf_set_partitioner_cb(topic_conf_handle, callback_func):
 
     NB returns a cffi callback handle that must be kept alive
     """
-    @_ffi.callback("int32_t (const rd_kafka_topic_t *, const void *,"
-                   "         size_t, int32_t, void *, void *)")
+    @ffi.callback("int32_t (const rd_kafka_topic_t *, const void *,"
+                  "         size_t, int32_t, void *, void *)")
     def func(topic, key, key_len, partition_cnt, t_opaque, m_opaque):
         key = utils._voidp2bytes(key, key_len)[:]
         partition_list = range(partition_cnt)
         while partition_list:
             p = callback_func(key, partition_list)
             if (p is None or
-                    _lib.rd_kafka_topic_partition_available(topic, p)):
+                    lib.rd_kafka_topic_partition_available(topic, p)):
                 break
             else:
                 partition_list.remove(p)
                 p = None
-        return _lib.RD_KAFKA_PARTITION_UA if p is None else p
+        return lib.RD_KAFKA_PARTITION_UA if p is None else p
 
-    _lib.rd_kafka_topic_conf_set_partitioner_cb(topic_conf_handle, func)
+    lib.rd_kafka_topic_conf_set_partitioner_cb(topic_conf_handle, func)
     return func
 
 

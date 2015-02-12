@@ -1,4 +1,4 @@
-from headers import ffi as _ffi, lib as _lib
+from headers import lib
 from . import _msg_opaques
 from utils import _voidp2bytes
 
@@ -14,7 +14,7 @@ class Message(object):
 
     def __del__(self):
         if self.manage_memory:
-            _lib.rd_kafka_message_destroy(self.cdata)
+            lib.rd_kafka_message_destroy(self.cdata)
 
     @property
     def partition(self):

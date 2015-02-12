@@ -1,6 +1,6 @@
 import errno
 
-from headers import ffi as _ffi, lib as _lib
+from headers import ffi, lib
 from message import Message
 from utils import _mk_errstr, _err2str, _errno2str
 
@@ -33,14 +33,14 @@ def _open_partition(queue, topic, partition, start_offset):
     lock = TopparLock((topic, partition))
 
     if start_offset == OFFSET_BEGINNING:
-        start_offset = _lib.RD_KAFKA_OFFSET_BEGINNING
+        start_offset = lib.RD_KAFKA_OFFSET_BEGINNING
     elif start_offset == OFFSET_END:
-        start_offset = _lib.RD_KAFKA_OFFSET_END
+        start_offset = lib.RD_KAFKA_OFFSET_END
     elif start_offset < 0:
         # pythonistas expect this to be relative to end
-        start_offset += _lib.RD_KAFKA_OFFSET_TAIL_BASE
+        start_offset += lib.RD_KAFKA_OFFSET_TAIL_BASE
 
-    rv = _lib.rd_kafka_consume_start_queue(
+    rv = lib.rd_kafka_consume_start_queue(
             topic.cdata, partition, start_offset, queue)
     if rv:
         raise PartitionReaderException(
@@ -76,7 +76,7 @@ class TopparLock(object):
             return
         open_partitions.remove(self.toppar)
         top, par = self.toppar
-        rv = _lib.rd_kafka_consume_stop(top.cdata, par)
+        rv = lib.rd_kafka_consume_stop(top.cdata, par)
         if rv:
             raise PartitionReaderException(
                     "rd_kafka_consume_stop({}, {}): ".format(top, par)
@@ -115,7 +115,7 @@ class QueueReader(object):
 
     def __init__(self, kafka_handle):
         self.kafka_handle = kafka_handle
-        self.cdata = _lib.rd_kafka_queue_new(self.kafka_handle.cdata)
+        self.cdata = lib.rd_kafka_queue_new(self.kafka_handle.cdata)
         self.locks = []  # see add_toppar()
 
     def __del__(self):
@@ -138,16 +138,16 @@ class QueueReader(object):
 
     def consume(self, timeout_ms=1000):
         self._check_not_closed()
-        msg = _lib.rd_kafka_consume_queue(self.cdata, timeout_ms)
-        if msg == _ffi.NULL:
-            if _ffi.errno == errno.ETIMEDOUT:
+        msg = lib.rd_kafka_consume_queue(self.cdata, timeout_ms)
+        if msg == ffi.NULL:
+            if ffi.errno == errno.ETIMEDOUT:
                 return None
-            elif _ffi.errno == errno.ENOENT:
+            elif ffi.errno == errno.ENOENT:
                 raise PartitionReaderException(
                         "Got ENOENT while trying to read from queue")
-        elif msg.err == _lib.RD_KAFKA_RESP_ERR_NO_ERROR:
+        elif msg.err == lib.RD_KAFKA_RESP_ERR_NO_ERROR:
             return Message(msg)
-        elif msg.err == _lib.RD_KAFKA_RESP_ERR__PARTITION_EOF:
+        elif msg.err == lib.RD_KAFKA_RESP_ERR__PARTITION_EOF:
             # TODO maybe raise StopIteration to distinguish from ETIMEDOUT?
             return None
         else:
@@ -156,8 +156,8 @@ class QueueReader(object):
 
     def consume_batch(self, max_messages, timeout_ms=1000):
         self._check_not_closed()
-        msg_array = _ffi.new('rd_kafka_message_t* []', max_messages)
-        n_out = _lib.rd_kafka_consume_batch_queue(
+        msg_array = ffi.new('rd_kafka_message_t* []', max_messages)
+        n_out = lib.rd_kafka_consume_batch_queue(
                     self.cdata, timeout_ms, msg_array, max_messages)
         if n_out == -1:
             raise PartitionReaderException(_errno2str())
@@ -175,14 +175,14 @@ class QueueReader(object):
         After timeout_ms, return the number of messages consumed.
         """
         self._check_not_closed()
-        opaque_p = _ffi.new_handle(opaque)
+        opaque_p = ffi.new_handle(opaque)
 
-        @_ffi.callback('void (rd_kafka_message_t *, void *)')
+        @ffi.callback('void (rd_kafka_message_t *, void *)')
         def func(msg, opaque):
             callback_func(Message(msg, manage_memory=False),
-                          _ffi.from_handle(opaque))
+                          ffi.from_handle(opaque))
 
-        n_out = _lib.rd_kafka_consume_callback_queue(
+        n_out = lib.rd_kafka_consume_callback_queue(
                     self.cdata, timeout_ms, func, opaque_p)
         if n_out == -1:
             raise PartitionReaderException(_errno2str())
@@ -196,7 +196,7 @@ class QueueReader(object):
             while self.locks:
                 self.locks.pop().release()
         finally:
-            _lib.rd_kafka_queue_destroy(self.cdata)
+            lib.rd_kafka_queue_destroy(self.cdata)
             self.cdata = None
 
     def _check_not_closed(self):
