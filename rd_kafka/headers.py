@@ -165,6 +165,7 @@ ffi.cdef(
 
     int rd_kafka_poll (rd_kafka_t *rk, int timeout_ms);
     int rd_kafka_outq_len (rd_kafka_t *rk);
+    int rd_kafka_wait_destroyed (int timeout_ms);
     """)
 lib = ffi.verify("#include <librdkafka/rdkafka.h>", libraries=['rdkafka'])
 

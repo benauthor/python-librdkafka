@@ -1,3 +1,4 @@
+import atexit
 import logging
 
 from . import config_handles, msg_opaques
@@ -12,6 +13,13 @@ logger = logging.getLogger(__name__)
 
 class LibrdkafkaException(Exception):
     pass
+
+
+@atexit.register
+def check_destroyed():
+    """ Check if all KafkaHandles have been cleaned up """
+    if lib.rd_kafka_wait_destroyed(2000):
+        raise LibrdkafkaException("Timeout in rd_kafka_wait_destroyed")
 
 
 class BaseTopic(object):
