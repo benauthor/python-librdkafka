@@ -17,40 +17,6 @@ class PartitionReaderException(Exception):
     pass
 
 
-def _open_partition(queue, topic, partition, start_offset):
-    """
-    Open a topic+partition for reading and return a lock for it
-
-    Subsequent calls for the same topic+partition ("toppar") will raise
-    exceptions, until the holder of the lock calls release() on it (which will
-    both close the toppar and release the lock).
-
-    We need this because of librdkafka's consumer API, where we are only
-    allowed 1 call to rd_kafka_consume_start_queue() for every
-    rd_kafka_consume_stop() (as per the docs, and as is obvious because it
-    would mix up offsets of concurrent readers)
-    """
-    lock = TopparLock((topic, partition))
-
-    if start_offset == OFFSET_BEGINNING:
-        start_offset = lib.RD_KAFKA_OFFSET_BEGINNING
-    elif start_offset == OFFSET_END:
-        start_offset = lib.RD_KAFKA_OFFSET_END
-    elif start_offset < 0:
-        # pythonistas expect this to be relative to end
-        start_offset += lib.RD_KAFKA_OFFSET_TAIL_BASE
-
-    rv = lib.rd_kafka_consume_start_queue(
-            topic.cdata, partition, start_offset, queue)
-    if rv:
-        raise PartitionReaderException(
-                "rd_kafka_consume_start_queue: " + errno2str())
-    # FIXME we use the following hack to prevent ETIMEDOUT on a consume()
-    # call that comes too soon after rd_kafka_consume_start().  Slow!
-    topic.kafka_handle.poll()
-    return lock
-
-
 class TopparLock(object):
     """ Hold a lock to prevent concurrent readers on a topic+partition """
     def __init__(self, toppar):
@@ -133,8 +99,7 @@ class QueueReader(object):
         if self.kafka_handle.cdata != topic.kafka_handle.cdata:
             raise PartitionReaderException(
                     "Topics must derive from same KafkaHandle as queue")
-        self.locks.append(
-            _open_partition(self.cdata, topic, partition, start_offset))
+        self._open_partition(topic, partition, start_offset)
 
     def consume(self, timeout_ms=1000):
         self._check_not_closed()
@@ -203,3 +168,35 @@ class QueueReader(object):
         if self.cdata is None:
             raise PartitionReaderException(
                     "You called close() on this handle; get a fresh one.")
+
+    def _open_partition(self, topic, partition_id, start_offset):
+        """
+        Open a topic+partition for reading and return a lock for it
+
+        Subsequent calls for the same topic+partition ("toppar") will raise
+        exceptions, until the holder of the lock calls release() on it (which will
+        both close the toppar and release the lock).
+
+        We need this because of librdkafka's consumer API, where we are only
+        allowed 1 call to rd_kafka_consume_start_queue() for every
+        rd_kafka_consume_stop() (as per the docs, and as is obvious because it
+        would mix up offsets of concurrent readers)
+        """
+        self.locks.append(TopparLock((topic, partition_id)))
+
+        if start_offset == OFFSET_BEGINNING:
+            start_offset = lib.RD_KAFKA_OFFSET_BEGINNING
+        elif start_offset == OFFSET_END:
+            start_offset = lib.RD_KAFKA_OFFSET_END
+        elif start_offset < 0:
+            # pythonistas expect this to be relative to end
+            start_offset += lib.RD_KAFKA_OFFSET_TAIL_BASE
+
+        rv = lib.rd_kafka_consume_start_queue(
+                topic.cdata, partition_id, start_offset, self.cdata)
+        if rv:
+            raise PartitionReaderException(
+                    "rd_kafka_consume_start_queue: " + errno2str())
+        # FIXME we use the following hack to prevent ETIMEDOUT on a consume()
+        # call that comes too soon after rd_kafka_consume_start().  Slow!
+        topic.kafka_handle.poll()
