@@ -2,7 +2,7 @@ import errno
 
 from headers import ffi, lib
 from message import Message
-from utils import _mk_errstr, _err2str, _errno2str
+from utils import err2str, errno2str
 
 
 # TODO store topics by name, not object handle, to avoid circular refs:
@@ -44,7 +44,7 @@ def _open_partition(queue, topic, partition, start_offset):
             topic.cdata, partition, start_offset, queue)
     if rv:
         raise PartitionReaderException(
-                "rd_kafka_consume_start_queue: " + _errno2str())
+                "rd_kafka_consume_start_queue: " + errno2str())
     # FIXME we use the following hack to prevent ETIMEDOUT on a consume()
     # call that comes too soon after rd_kafka_consume_start().  Slow!
     topic.kafka_handle.poll()
@@ -80,7 +80,7 @@ class TopparLock(object):
         if rv:
             raise PartitionReaderException(
                     "rd_kafka_consume_stop({}, {}): ".format(top, par)
-                    + _errno2str())
+                    + errno2str())
         self.toppar = None
 
 
@@ -152,7 +152,7 @@ class QueueReader(object):
             return None
         else:
             # TODO we should inspect msg.payload here too
-            raise PartitionReaderException(_err2str(msg.err))
+            raise PartitionReaderException(err2str(msg.err))
 
     def consume_batch(self, max_messages, timeout_ms=1000):
         self._check_not_closed()
@@ -160,7 +160,7 @@ class QueueReader(object):
         n_out = lib.rd_kafka_consume_batch_queue(
                     self.cdata, timeout_ms, msg_array, max_messages)
         if n_out == -1:
-            raise PartitionReaderException(_errno2str())
+            raise PartitionReaderException(errno2str())
         else:
             # TODO filter out error messages; eg. sometimes the last
             # message has no payload, but error flag 'No more messages'
@@ -185,7 +185,7 @@ class QueueReader(object):
         n_out = lib.rd_kafka_consume_callback_queue(
                     self.cdata, timeout_ms, func, opaque_p)
         if n_out == -1:
-            raise PartitionReaderException(_errno2str())
+            raise PartitionReaderException(errno2str())
         else:
             return n_out
 

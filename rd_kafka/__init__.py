@@ -3,7 +3,7 @@ import logging
 from . import config_handles, msg_opaques
 from headers import ffi, lib
 from .partition_reader import QueueReader
-from .utils import _mk_errstr, _err2str, _errno2str
+from .utils import mk_errstr, err2str, errno2str
 
 
 __all__ = ["Producer", "Consumer"]
@@ -25,7 +25,7 @@ class BaseTopic(object):
                 self.conf_callbacks.append(
                     config_handles.topic_conf_set_partitioner_cb(conf, v))
             else:
-                errstr = _mk_errstr()
+                errstr = mk_errstr()
                 res = lib.rd_kafka_topic_conf_set(
                             conf, k, v, errstr, len(errstr))
                 if res != lib.RD_KAFKA_CONF_OK:
@@ -34,7 +34,7 @@ class BaseTopic(object):
         self.cdata = lib.rd_kafka_topic_new(
                          self.kafka_handle.cdata, name, conf)
         if self.cdata == ffi.NULL:
-            raise LibrdkafkaException(_errno2str())
+            raise LibrdkafkaException(errno2str())
 
     def __del__(self):
         lib.rd_kafka_topic_destroy(self.cdata)
@@ -55,7 +55,7 @@ class KafkaHandle(object):
         config_dict -- A dict with keys as per librdkafka's CONFIGURATION.md
         """
         self.config_man = config_handles.ConfigManager(self, config_dict)
-        errstr = _mk_errstr()
+        errstr = mk_errstr()
         self.cdata = lib.rd_kafka_new(
                 handle_type, self.config_man.pop_config(), errstr, len(errstr))
         if self.cdata == ffi.NULL:
@@ -86,7 +86,7 @@ class ProducerTopic(BaseTopic):
                  key, len(key) if key else 0,
                  msg_opaque)
         if rv:
-            raise LibrdkafkaException(_errno2str())
+            raise LibrdkafkaException(errno2str())
 
 
 class Producer(KafkaHandle):
@@ -139,7 +139,7 @@ def _metadata(kafka_handle, all_topics=True, topic=None, timeout_ms=1000):
                                 meta_dp,
                                 timeout_ms)
     if err != lib.RD_KAFKA_RESP_ERR_NO_ERROR:
-        raise LibrdkafkaException(_err2str(err))
+        raise LibrdkafkaException(err2str(err))
 
     d = {}
     meta = meta_dp[0]
@@ -155,10 +155,10 @@ def _metadata(kafka_handle, all_topics=True, topic=None, timeout_ms=1000):
         for j in range(t.partition_cnt):
             p = t.partitions[j]
             topic_d['partitions'][p.id] = dict(
-                    err=_err2str(p.err), leader=p.leader,
+                    err=err2str(p.err), leader=p.leader,
                     replicas=[p.replicas[r] for r in range(p.replica_cnt)],
                     isrs=[p.isrs[r] for r in range(p.isr_cnt)])
-        topic_d['err'] = _err2str(t.err)
+        topic_d['err'] = err2str(t.err)
     d['orig_broker_id'] = meta.orig_broker_id
     d['orig_broker_name'] = ffi.string(meta.orig_broker_name)
 

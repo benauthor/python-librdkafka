@@ -1,6 +1,6 @@
 from headers import lib
 from . import msg_opaques
-from utils import _voidp2bytes
+from utils import voidp2bytes
 
 
 class MessageException(Exception):
@@ -22,11 +22,11 @@ class Message(object):
 
     @property
     def payload(self):
-        return _voidp2bytes(self.cdata.payload, self.cdata.len)
+        return voidp2bytes(self.cdata.payload, self.cdata.len)
 
     @property
     def key(self):
-        return _voidp2bytes(self.cdata.key, self.cdata.key_len)
+        return voidp2bytes(self.cdata.key, self.cdata.key_len)
 
     @property
     def offset(self):

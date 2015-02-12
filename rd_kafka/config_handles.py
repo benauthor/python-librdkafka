@@ -41,7 +41,7 @@ class ConfigManager(object):
             try: # if this is a callback setter:
                 getattr(self, "set_" + name)(value)
             except AttributeError:
-                errstr = utils._mk_errstr()
+                errstr = utils.mk_errstr()
                 res = lib.rd_kafka_conf_set(
                           self.cdata, name, value, errstr, len(errstr))
                 if res != lib.RD_KAFKA_CONF_OK:
@@ -130,7 +130,7 @@ def topic_conf_set_partitioner_cb(topic_conf_handle, callback_func):
     @ffi.callback("int32_t (const rd_kafka_topic_t *, const void *,"
                   "         size_t, int32_t, void *, void *)")
     def func(topic, key, key_len, partition_cnt, t_opaque, m_opaque):
-        key = utils._voidp2bytes(key, key_len)[:]
+        key = utils.voidp2bytes(key, key_len)[:]
         partition_list = range(partition_cnt)
         while partition_list:
             p = callback_func(key, partition_list)
