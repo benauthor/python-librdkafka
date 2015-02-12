@@ -1,6 +1,6 @@
 import logging
 
-from . import _config_handles, _msg_opaques
+from . import config_handles, msg_opaques
 from headers import ffi, lib
 from .partition_reader import QueueReader
 from .utils import _mk_errstr, _err2str, _errno2str
@@ -23,7 +23,7 @@ class BaseTopic(object):
         for k, v in topic_config_dict.items():
             if k == "partitioner":
                 self.conf_callbacks.append(
-                    _config_handles.topic_conf_set_partitioner_cb(conf, v))
+                    config_handles.topic_conf_set_partitioner_cb(conf, v))
             else:
                 errstr = _mk_errstr()
                 res = lib.rd_kafka_topic_conf_set(
@@ -54,7 +54,7 @@ class KafkaHandle(object):
         """
         config_dict -- A dict with keys as per librdkafka's CONFIGURATION.md
         """
-        self.config_man = _config_handles.ConfigManager(self, config_dict)
+        self.config_man = config_handles.ConfigManager(self, config_dict)
         errstr = _mk_errstr()
         self.cdata = lib.rd_kafka_new(
                 handle_type, self.config_man.pop_config(), errstr, len(errstr))
@@ -79,7 +79,7 @@ class ProducerTopic(BaseTopic):
     def produce(self, payload, key=None,
                 partition=lib.RD_KAFKA_PARTITION_UA, msg_opaque=None):
         key = key or ffi.NULL
-        msg_opaque = _msg_opaques.get_handle(msg_opaque)
+        msg_opaque = msg_opaques.get_handle(msg_opaque)
         rv = lib.rd_kafka_produce(
                  self.cdata, partition, lib.RD_KAFKA_MSG_F_COPY,
                  payload, len(payload),

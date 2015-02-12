@@ -1,5 +1,5 @@
 from headers import lib
-from . import _msg_opaques
+from . import msg_opaques
 from utils import _voidp2bytes
 
 
@@ -42,8 +42,8 @@ class Message(object):
                                    "handle is no longer available after "
                                    "dr_msg_cb() returns.")
         else:
-            return _msg_opaques.from_handle(self.cdata._private)
+            return msg_opaques.from_handle(self.cdata._private)
 
     def _free_opaque(self):
         self.opaque_freed = True  # prevent crash by subsequent opaque() calls
-        _msg_opaques.drop_handle(self.cdata._private)
+        msg_opaques.drop_handle(self.cdata._private)
