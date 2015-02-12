@@ -96,11 +96,13 @@ class Producer(KafkaHandle):
                                        config_dict=config_dict)
 
     def __del__(self):
-        # flush the write queues:
+        self.flush_queues()
+        super(Producer, self).__del__()
+
+    def flush_queues(self):
         while _lib.rd_kafka_outq_len(self.cdata) > 0:
             # TODO make sure we can break out of here
             self.poll(100)
-        super(Producer, self).__del__()
 
 
 class ConsumerTopic(BaseTopic):

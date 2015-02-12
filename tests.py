@@ -26,8 +26,7 @@ class QueueReaderTestCase(unittest.TestCase):
         t = p.open_topic("TopicPartitionTestCase")
         for _ in range(1000):
             t.produce(b"boohoohoo")
-        # force flushing queues:
-        p.poll(100)
+        p.flush_queues()
 
     def setUp(self):
         self.consumer = Consumer(self.config)
