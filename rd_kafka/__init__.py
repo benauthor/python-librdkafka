@@ -2,10 +2,11 @@ import logging
 
 from . import _config_handles, _msg_opaques
 from headers import ffi as _ffi, lib as _lib
-from .partition_reader import QueueReader, PartitionReaderException
+from .partition_reader import QueueReader
 from .utils import _mk_errstr, _err2str, _errno2str
 
 
+__all__ = ["Producer", "Consumer"]
 logger = logging.getLogger(__name__)
 
 

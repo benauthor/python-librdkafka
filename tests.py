@@ -4,6 +4,7 @@ import time
 import unittest
 
 from rd_kafka import *
+from rd_kafka.partition_reader import PartitionReaderException
 import example
 
 
