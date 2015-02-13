@@ -47,10 +47,18 @@ class QueueReader(object):
     def __init__(self, kafka_handle):
         self.kafka_handle = kafka_handle
         self.toppars = set() # {(topic, partition_id), }
-        self.cdata = lib.rd_kafka_queue_new(self.kafka_handle.cdata)
+        self._cdata = lib.rd_kafka_queue_new(self.kafka_handle.cdata)
 
     def __del__(self):
         self.close()
+
+    @property
+    def cdata(self):
+        if self._cdata is None:
+            raise PartitionReaderException(
+                    "You called close() on this handle; get a fresh one.")
+        else:
+            return self._cdata
 
     def add_toppar(self, topic, partition_id, start_offset):
         """
@@ -79,7 +87,6 @@ class QueueReader(object):
         topic.kafka_handle.poll()
 
     def consume(self, timeout_ms=1000):
-        self._check_not_closed()
         msg = lib.rd_kafka_consume_queue(self.cdata, timeout_ms)
         if msg == ffi.NULL:
             if ffi.errno == errno.ETIMEDOUT:
@@ -97,7 +104,6 @@ class QueueReader(object):
             raise PartitionReaderException(err2str(msg.err))
 
     def consume_batch(self, max_messages, timeout_ms=1000):
-        self._check_not_closed()
         msg_array = ffi.new('rd_kafka_message_t* []', max_messages)
         n_out = lib.rd_kafka_consume_batch_queue(
                     self.cdata, timeout_ms, msg_array, max_messages)
@@ -116,7 +122,6 @@ class QueueReader(object):
         and any python object you wish to pass in the 'opaque' above.
         After timeout_ms, return the number of messages consumed.
         """
-        self._check_not_closed()
         opaque_p = ffi.new_handle(opaque)
 
         @ffi.callback('void (rd_kafka_message_t *, void *)')
@@ -132,23 +137,18 @@ class QueueReader(object):
             return n_out
 
     def close(self):
-        if self.cdata is None:
-            return
         try:
-            for top, par in self.toppars:
+            while self.toppars: # stop reading to queue and release each:
+                top, par = self.toppars.pop()
                 if lib.rd_kafka_consume_stop(top.cdata, par):
                     raise PartitionReaderException(
                             "rd_kafka_consume_stop({}, {}): ".format(top, par)
                             + errno2str())
                 self.kafka_handle.toppar_manager.release(top.name, par, self)
         finally:
-            lib.rd_kafka_queue_destroy(self.cdata)
-            self.cdata = None
-
-    def _check_not_closed(self):
-        if self.cdata is None:
-            raise PartitionReaderException(
-                    "You called close() on this handle; get a fresh one.")
+            if self._cdata is not None:
+                lib.rd_kafka_queue_destroy(self.cdata)
+            self._cdata = None
 
     @staticmethod
     def _to_rdkafka_offset(start_offset):

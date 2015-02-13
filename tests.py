@@ -41,10 +41,30 @@ class QueueReaderTestCase(unittest.TestCase):
         self.reader.close()
         second_reader = self.topic.open_partition(0, 0)
         msg = second_reader.consume() # should succeed without exceptions
+
         # Now that second_reader has opened the partition again, reader should
         # still refuse to read from it:
         with self.assertRaises(PartitionReaderException):
             msg = self.reader.consume()
+
+    def test_after_close(self):
+        """ Test that methods called after close() raise exceptions """
+        self.reader.close()
+        with self.assertRaises(PartitionReaderException):
+            self.reader.add_toppar(self.topic, 0, -1)
+        with self.assertRaises(PartitionReaderException):
+            msg = self.reader.consume()
+
+        # finally, the add_toppar() above must not reserve toppar forever:
+        manager = self.reader.kafka_handle.toppar_manager
+        try:
+            # if this raises, the add_toppar above got hold of the toppar:
+            manager.claim(self.topic.name, 0, object())
+        except:
+            in_map = lambda: (self.topic.name, 0) in manager.toppar_owner_map
+            self.assertTrue(in_map())
+            del self.reader
+            self.assertFalse(in_map())
 
     def test_magic_offsets(self):
         self.reader.close()
