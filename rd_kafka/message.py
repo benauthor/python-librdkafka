@@ -1,5 +1,5 @@
 from headers import lib
-from . import msg_opaques
+from . import msg_opaques, finaliser
 from utils import voidp2bytes
 
 
@@ -10,11 +10,8 @@ class MessageException(Exception):
 class Message(object):
     def __init__(self, cdata, manage_memory=True):
         self.cdata = cdata
-        self.manage_memory = manage_memory
-
-    def __del__(self):
-        if self.manage_memory:
-            lib.rd_kafka_message_destroy(self.cdata)
+        if manage_memory:
+            finaliser.register(self, lib.rd_kafka_message_destroy, self.cdata)
 
     @property
     def partition(self):

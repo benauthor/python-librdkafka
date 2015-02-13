@@ -1,7 +1,7 @@
 import atexit
 import logging
 
-from . import config_handles, msg_opaques
+from . import config_handles, msg_opaques, finaliser
 from headers import ffi, lib
 from .partition_reader import QueueReader, TopparManager
 from .utils import mk_errstr, err2str, errno2str
@@ -43,9 +43,8 @@ class BaseTopic(object):
                          self.kafka_handle.cdata, name, conf)
         if self.cdata == ffi.NULL:
             raise LibrdkafkaException(errno2str())
-
-    def __del__(self):
-        lib.rd_kafka_topic_destroy(self.cdata)
+        else:
+            finaliser.register(self, lib.rd_kafka_topic_destroy, self.cdata)
 
     @property
     def name(self):
@@ -68,9 +67,8 @@ class KafkaHandle(object):
                 handle_type, self.config_man.pop_config(), errstr, len(errstr))
         if self.cdata == ffi.NULL:
             raise LibrdkafkaException(ffi.string(errstr))
-
-    def __del__(self):
-        lib.rd_kafka_destroy(self.cdata)
+        else:
+            finaliser.register(self, lib.rd_kafka_destroy, self.cdata)
 
     def open_topic(self, name, topic_config_dict={}):
         return self.topic_type(name, self, topic_config_dict)
@@ -103,15 +101,16 @@ class Producer(KafkaHandle):
     def __init__(self, config_dict):
         super(Producer, self).__init__(handle_type=lib.RD_KAFKA_PRODUCER,
                                        config_dict=config_dict)
-
-    def __del__(self):
-        self.flush_queues()
-        super(Producer, self).__del__()
+        finaliser.register(self, Producer._flush_queues, self.cdata)
 
     def flush_queues(self):
-        while lib.rd_kafka_outq_len(self.cdata) > 0:
+        self._flush_queues(self.cdata)
+
+    @staticmethod # static as finaliser mustn't capture references to self
+    def _flush_queues(cdata):
+        while lib.rd_kafka_outq_len(cdata) > 0:
             # TODO make sure we can break out of here
-            self.poll(100)
+            lib.rd_kafka_poll(cdata, 100)
 
 
 class ConsumerTopic(BaseTopic):
