@@ -1,12 +1,10 @@
 import errno
+import threading
 
 from headers import ffi, lib
 from message import Message
 from utils import err2str, errno2str
 
-
-# TODO store topics by name, not object handle, to avoid circular refs:
-open_partitions = set() # partitions that have been "started" in rd_kafka
 
 # NB these must be str, not int:
 OFFSET_BEGINNING = 'beginning'
@@ -15,39 +13,6 @@ OFFSET_END = 'end'
 
 class PartitionReaderException(Exception):
     pass
-
-
-class TopparLock(object):
-    """ Hold a lock to prevent concurrent readers on a topic+partition """
-    def __init__(self, toppar):
-        if toppar in open_partitions:
-            self.toppar = None
-            raise PartitionReaderException(
-                    "Partition {} open elsewhere!".format(toppar))
-        else:
-            open_partitions.add(toppar)
-            self.toppar = toppar
-    
-    def __del__(self):
-        self.release()
-
-    def __copy__(self):
-        raise NotImplementedError("Permitting copies would be confusing")
-
-    def __deepcopy__(self, memo):
-        raise NotImplementedError("Permitting copies would be confusing")
-
-    def release(self):
-        if self.toppar is None:  # don't run twice!
-            return
-        open_partitions.remove(self.toppar)
-        top, par = self.toppar
-        rv = lib.rd_kafka_consume_stop(top.cdata, par)
-        if rv:
-            raise PartitionReaderException(
-                    "rd_kafka_consume_stop({}, {}): ".format(top, par)
-                    + errno2str())
-        self.toppar = None
 
 
 class QueueReader(object):
@@ -81,25 +46,37 @@ class QueueReader(object):
 
     def __init__(self, kafka_handle):
         self.kafka_handle = kafka_handle
+        self.toppars = set() # {(topic, partition_id), }
         self.cdata = lib.rd_kafka_queue_new(self.kafka_handle.cdata)
-        self.locks = []  # see add_toppar()
 
     def __del__(self):
         self.close()
 
-    def __copy__(self):
-        raise NotImplementedError("Permitting copies would be confusing")
+    def add_toppar(self, topic, partition_id, start_offset):
+        """
+        Open given topic+partition for reading through this queue
 
-    def __deepcopy__(self, memo):
-        raise NotImplementedError("Permitting copies would be confusing")
-
-    def add_toppar(self, topic, partition, start_offset):
-        """ Open given topic+partition for reading through this queue """
+        Raise exception if another reader holds this toppar already
+        """
         # TODO sensible default for start_offset
         if self.kafka_handle.cdata != topic.kafka_handle.cdata:
             raise PartitionReaderException(
                     "Topics must derive from same KafkaHandle as queue")
-        self._open_partition(topic, partition, start_offset)
+
+        self.kafka_handle.toppar_manager.claim(topic.name, partition_id, self)
+        self.toppars.add((topic, partition_id))
+
+        if lib.rd_kafka_consume_start_queue(
+                topic.cdata,
+                partition_id,
+                self._to_rdkafka_offset(start_offset),
+                self.cdata):
+            raise PartitionReaderException(
+                    "rd_kafka_consume_start_queue: " + errno2str())
+        # FIXME we use the following hack to prevent ETIMEDOUT on a consume()
+        # call that comes too soon after rd_kafka_consume_start().  It's slow
+        # and it bothers me that I don't get why it's needed.
+        topic.kafka_handle.poll()
 
     def consume(self, timeout_ms=1000):
         self._check_not_closed()
@@ -158,8 +135,12 @@ class QueueReader(object):
         if self.cdata is None:
             return
         try:
-            while self.locks:
-                self.locks.pop().release()
+            for top, par in self.toppars:
+                if lib.rd_kafka_consume_stop(top.cdata, par):
+                    raise PartitionReaderException(
+                            "rd_kafka_consume_stop({}, {}): ".format(top, par)
+                            + errno2str())
+                self.kafka_handle.toppar_manager.release(top.name, par, self)
         finally:
             lib.rd_kafka_queue_destroy(self.cdata)
             self.cdata = None
@@ -169,21 +150,8 @@ class QueueReader(object):
             raise PartitionReaderException(
                     "You called close() on this handle; get a fresh one.")
 
-    def _open_partition(self, topic, partition_id, start_offset):
-        """
-        Open a topic+partition for reading and return a lock for it
-
-        Subsequent calls for the same topic+partition ("toppar") will raise
-        exceptions, until the holder of the lock calls release() on it (which will
-        both close the toppar and release the lock).
-
-        We need this because of librdkafka's consumer API, where we are only
-        allowed 1 call to rd_kafka_consume_start_queue() for every
-        rd_kafka_consume_stop() (as per the docs, and as is obvious because it
-        would mix up offsets of concurrent readers)
-        """
-        self.locks.append(TopparLock((topic, partition_id)))
-
+    @staticmethod
+    def _to_rdkafka_offset(start_offset):
         if start_offset == OFFSET_BEGINNING:
             start_offset = lib.RD_KAFKA_OFFSET_BEGINNING
         elif start_offset == OFFSET_END:
@@ -191,12 +159,46 @@ class QueueReader(object):
         elif start_offset < 0:
             # pythonistas expect this to be relative to end
             start_offset += lib.RD_KAFKA_OFFSET_TAIL_BASE
+        return start_offset
 
-        rv = lib.rd_kafka_consume_start_queue(
-                topic.cdata, partition_id, start_offset, self.cdata)
-        if rv:
-            raise PartitionReaderException(
-                    "rd_kafka_consume_start_queue: " + errno2str())
-        # FIXME we use the following hack to prevent ETIMEDOUT on a consume()
-        # call that comes too soon after rd_kafka_consume_start().  Slow!
-        topic.kafka_handle.poll()
+
+class TopparManager(object):
+    """
+    Helper class for Consumer that keeps track of open topic+partitions
+
+    We need this because of librdkafka's consumer API, where we are only
+    allowed 1 call to rd_kafka_consume_start_queue() for every
+    rd_kafka_consume_stop() (as per the docs, and as is obvious because it
+    would mix up offsets of concurrent readers)
+    """
+    def __init__(self):
+        self.toppar_owner_map = {}
+        self.lock = threading.Lock()
+
+    def claim(self, topic_name, partition_id, requester):
+        """
+        Reserve topic+partition for requester
+
+        Raise exception if toppar is already reserved
+        """
+        toppar = (topic_name, partition_id)
+        with self.lock:
+            if toppar in self.toppar_owner_map:
+                raise PartitionReaderException(
+                        "Partition {} open elsewhere!".format(toppar))
+            else:
+                self.toppar_owner_map[toppar] = id(requester)
+
+    def release(self, topic_name, partition_id, requester):
+        """
+        Release toppar if owned by requester
+
+        It should be safe to call this repeatedly
+        """
+        toppar = (topic_name, partition_id)
+        with self.lock:
+            m = self.toppar_owner_map
+            if toppar in m and m[toppar] == id(requester):
+                del m[toppar]
+            else:
+                logger.warning("Release denied for toppar {}".format(toppar))

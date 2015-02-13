@@ -3,7 +3,7 @@ import logging
 
 from . import config_handles, msg_opaques
 from headers import ffi, lib
-from .partition_reader import QueueReader
+from .partition_reader import QueueReader, TopparManager
 from .utils import mk_errstr, err2str, errno2str
 
 
@@ -130,6 +130,8 @@ class Consumer(KafkaHandle):
     def __init__(self, config_dict):
         super(Consumer, self).__init__(handle_type=lib.RD_KAFKA_CONSUMER,
                                        config_dict=config_dict)
+        # a registry to prevent double-opens of toppars:
+        self.toppar_manager = TopparManager()
 
     def new_queue(self):
         return partition_reader.QueueReader(self)
