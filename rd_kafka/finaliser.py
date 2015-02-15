@@ -57,6 +57,7 @@ def register(caller_obj, callback, *callback_args, **callback_kwargs):
         logger.debug("Finalising " + debugging_repr)
         callback(*callback_args, **callback_kwargs)
         del registered_objects[id(weakref_obj)]
+        logging.debug("Unfinalised objs left: {}".format(registered_objects))
 
     ref = weakref.ref(caller_obj, cb)
     registered_objects[id(ref)] = ref

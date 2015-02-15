@@ -85,6 +85,7 @@ ffi.cdef(
     rd_kafka_t *rd_kafka_new (rd_kafka_type_t type, rd_kafka_conf_t *conf,
                               char *errstr, size_t errstr_size);
     void rd_kafka_destroy (rd_kafka_t *rk);
+    const char *rd_kafka_name (const rd_kafka_t *rk);
 
     rd_kafka_topic_t *rd_kafka_topic_new (rd_kafka_t *rk, const char *topic,
                                           rd_kafka_topic_conf_t *conf);

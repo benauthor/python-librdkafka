@@ -2,7 +2,7 @@ import logging
 
 from . import config_handles, msg_opaques, finaliser
 from headers import ffi, lib
-from .partition_reader import QueueReader, TopparManager
+from .partition_reader import QueueReader
 from .utils import mk_errstr, err2str, errno2str
 
 
@@ -45,6 +45,19 @@ class BaseTopic(object):
     def metadata(self, timeout_ms=1000):
         return _metadata(self.kafka_handle, topic=self, timeout_ms=timeout_ms)
 
+    def __eq__(self, other):
+        # This is defined this way mostly for the benefit of partition_reader;
+        # if the KafkaHandle is the same and the name is the same, that means
+        # we'll end up talking to the same underlying local queue:
+        return (self.kafka_handle == other.kafka_handle
+                and self.name == other.name)
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return hash((self.kafka_handle, self.name))
+
 
 class KafkaHandle(object):
     topic_type = BaseTopic
@@ -70,6 +83,18 @@ class KafkaHandle(object):
 
     def poll(self, timeout_ms=1000):
         return lib.rd_kafka_poll(self.cdata, timeout_ms)
+
+    def name(self):
+        return ffi.string(lib.rd_kafka_name(self.cdata))
+
+    def __eq__(self, other):
+        return self.name() == other.name()
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return hash(self.name())
 
 
 class ProducerTopic(BaseTopic):
@@ -121,8 +146,6 @@ class Consumer(KafkaHandle):
     def __init__(self, config_dict):
         super(Consumer, self).__init__(handle_type=lib.RD_KAFKA_CONSUMER,
                                        config_dict=config_dict)
-        # a registry to prevent double-opens of toppars:
-        self.toppar_manager = TopparManager()
 
     def new_queue(self):
         return partition_reader.QueueReader(self)

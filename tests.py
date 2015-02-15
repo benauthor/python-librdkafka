@@ -1,14 +1,16 @@
 from collections import defaultdict
+import logging
 import random
 import time
 import unittest
 
 from rd_kafka import *
-from rd_kafka.partition_reader import PartitionReaderException
+from rd_kafka.partition_reader import PartitionReaderException, ConsumerPartition
 import example
 
 
 kafka_docker = "kafka:9092" # TODO make portable (see fig.yml etc)
+logging.basicConfig(level=logging.DEBUG)
 
 
 class ExampleTestCase(unittest.TestCase):
@@ -56,15 +58,13 @@ class QueueReaderTestCase(unittest.TestCase):
             msg = self.reader.consume()
 
         # finally, the add_toppar() above must not reserve toppar forever:
-        manager = self.reader.kafka_handle.toppar_manager
         try:
             # if this raises, the add_toppar above got hold of the toppar:
-            manager.claim(self.topic.name, 0, object())
+            cp = ConsumerPartition(self.topic, 0, -1)
         except:
-            in_map = lambda: (self.topic.name, 0) in manager.toppar_owner_map
-            self.assertTrue(in_map())
             del self.reader
-            self.assertFalse(in_map())
+            # try again, this should work:
+            cp = ConsumerPartition(self.topic, 0, -1)
 
     def test_magic_offsets(self):
         self.reader.close()
@@ -105,7 +105,6 @@ class QueueReaderTestCase(unittest.TestCase):
                 messages.append(bytes(msg.payload))
         self.assertIn(stuff, messages)
         self.assertIn("boohoohoo", messages)
-
 
 
 class ConfigTestCase(unittest.TestCase):

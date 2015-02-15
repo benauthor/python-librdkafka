@@ -1,6 +1,8 @@
 import errno
+import logging
 import threading
 
+from . import finaliser
 from headers import ffi, lib
 from message import Message
 from utils import err2str, errno2str
@@ -9,6 +11,9 @@ from utils import err2str, errno2str
 # NB these must be str, not int:
 OFFSET_BEGINNING = 'beginning'
 OFFSET_END = 'end'
+
+
+logger = logging.getLogger(__name__)
 
 
 class PartitionReaderException(Exception):
@@ -46,19 +51,43 @@ class QueueReader(object):
 
     def __init__(self, kafka_handle):
         self.kafka_handle = kafka_handle
-        self.toppars = set() # {(topic, partition_id), }
         self._cdata = lib.rd_kafka_queue_new(self.kafka_handle.cdata)
+        self.partitions = [] # NB only edit in-place; cf close()/_finalise()
 
-    def __del__(self):
-        self.close()
+        finaliser.register(
+                self, QueueReader._finalise, self.partitions, self._cdata)
 
     @property
     def cdata(self):
         if self._cdata is None:
             raise PartitionReaderException(
                     "You called close() on this handle; get a fresh one.")
+            # Setting _cdata to None on close() was necessary in an earlier
+            # implementation of this class; probably it would work fine now
+            # if we'd do a close() and then some new add_toppar() calls, but
+            # it's hard to reason it through, so I've left this at its old
+            # behaviour.
         else:
             return self._cdata
+
+    @staticmethod
+    def _finalise(partitions, cdata):
+        # We should clean-out partitions before destroying the queue handle, so
+        # they can be cleanly stopped.  I'm not entirely sure this is
+        # sufficient to guarantee ordering of finalisers on every python
+        # implementation.  It works on CPython:
+        del partitions[:]
+        lib.rd_kafka_queue_destroy(cdata)
+
+    def close(self):
+        """ Close all partitions """
+        # Like self._finalise(), but we don't destroy _cdata here, because
+        # there's no way to tell the finaliser not to try destroying it again
+        # (which would then segfault).  Note also that we must clean-out
+        # self.partitions in-place, because we sent a reference for it to
+        # finaliser.register():
+        del self.partitions[:]
+        self._cdata = None
 
     def add_toppar(self, topic, partition_id, start_offset):
         """
@@ -70,17 +99,8 @@ class QueueReader(object):
         if self.kafka_handle.cdata != topic.kafka_handle.cdata:
             raise PartitionReaderException(
                     "Topics must derive from same KafkaHandle as queue")
-
-        self.kafka_handle.toppar_manager.claim(topic.name, partition_id, self)
-        self.toppars.add((topic, partition_id))
-
-        if lib.rd_kafka_consume_start_queue(
-                topic.cdata,
-                partition_id,
-                self._to_rdkafka_offset(start_offset),
-                self.cdata):
-            raise PartitionReaderException(
-                    "rd_kafka_consume_start_queue: " + errno2str())
+        self.partitions.append(
+                ConsumerPartition(topic, partition_id, start_offset, self))
         # FIXME we use the following hack to prevent ETIMEDOUT on a consume()
         # call that comes too soon after rd_kafka_consume_start().  It's slow
         # and it bothers me that I don't get why it's needed.
@@ -136,19 +156,69 @@ class QueueReader(object):
         else:
             return n_out
 
-    def close(self):
-        try:
-            while self.toppars: # stop reading to queue and release each:
-                top, par = self.toppars.pop()
-                if lib.rd_kafka_consume_stop(top.cdata, par):
-                    raise PartitionReaderException(
-                            "rd_kafka_consume_stop({}, {}): ".format(top, par)
-                            + errno2str())
-                self.kafka_handle.toppar_manager.release(top.name, par, self)
-        finally:
-            if self._cdata is not None:
-                lib.rd_kafka_queue_destroy(self.cdata)
-            self._cdata = None
+
+class ConsumerPartition(object):
+    """
+    A partition with a "started" local consumer-queue
+
+    This class controls access to partitions.  For a given Consumer instance
+    and topic, only one ConsumerPartition can be held at any time (as per
+    librdkafka requirements).  Instantiating another ConsumerPartition for the same
+    topic+partition (toppar) will fail.
+
+    The consumer-queue for the toppar will be kept active (active in the sense
+    of the rd_kafka_consume_start/consume_stop functions) for as long as the
+    ConsumerPartition is alive.
+    """
+    locked_partitions = set()
+    locked_partitions_writelock = threading.Lock()
+
+    def __init__(self, topic, partition_id, start_offset, queue=None):
+
+        self.topic = topic
+        self.partition_id = partition_id
+
+        toppar = (topic, partition_id)
+        with ConsumerPartition.locked_partitions_writelock:
+            if toppar in ConsumerPartition.locked_partitions:
+                raise PartitionReaderException(
+                        "Partition {} open elsewhere!".format(toppar))
+            else:
+                ConsumerPartition.locked_partitions.add(toppar)
+
+        # If we got this far, the partition is now locked for us, and we must
+        # ensure always to unlock it in due course:
+        finaliser.register(self,
+                           ConsumerPartition._finalise,
+                           topic,
+                           partition_id)
+
+        if queue is not None:
+            status_code = lib.rd_kafka_consume_start_queue(
+                    topic.cdata,
+                    partition_id,
+                    self._to_rdkafka_offset(start_offset),
+                    queue.cdata)
+            if status_code:
+                raise PartitionReaderException(
+                        "rd_kafka_consume_start_queue: " + errno2str())
+        else: # TODO we could call the non-queue version of consume_start here
+            pass
+
+
+    @staticmethod
+    def _finalise(topic, partition_id):
+        """ Remove consumer-queue for toppar and unlock it """
+        if lib.rd_kafka_consume_stop(topic.cdata, partition_id):
+            logger.error("Error from rd_kafka_consume_stop("
+                         "{}, {}): ".format(topic, partition_id)
+                         + errno2str())
+        with ConsumerPartition.locked_partitions_writelock:
+            ConsumerPartition.locked_partitions.remove((topic, partition_id))
+        logger.debug("Removed {}:{} from locked_partitions; remaining: "
+                     " {}".format(topic,
+                                  partition_id,
+                                  ConsumerPartition.locked_partitions))
 
     @staticmethod
     def _to_rdkafka_offset(start_offset):
@@ -160,45 +230,3 @@ class QueueReader(object):
             # pythonistas expect this to be relative to end
             start_offset += lib.RD_KAFKA_OFFSET_TAIL_BASE
         return start_offset
-
-
-class TopparManager(object):
-    """
-    Helper class for Consumer that keeps track of open topic+partitions
-
-    We need this because of librdkafka's consumer API, where we are only
-    allowed 1 call to rd_kafka_consume_start_queue() for every
-    rd_kafka_consume_stop() (as per the docs, and as is obvious because it
-    would mix up offsets of concurrent readers)
-    """
-    def __init__(self):
-        self.toppar_owner_map = {}
-        self.lock = threading.Lock()
-
-    def claim(self, topic_name, partition_id, requester):
-        """
-        Reserve topic+partition for requester
-
-        Raise exception if toppar is already reserved
-        """
-        toppar = (topic_name, partition_id)
-        with self.lock:
-            if toppar in self.toppar_owner_map:
-                raise PartitionReaderException(
-                        "Partition {} open elsewhere!".format(toppar))
-            else:
-                self.toppar_owner_map[toppar] = id(requester)
-
-    def release(self, topic_name, partition_id, requester):
-        """
-        Release toppar if owned by requester
-
-        It should be safe to call this repeatedly
-        """
-        toppar = (topic_name, partition_id)
-        with self.lock:
-            m = self.toppar_owner_map
-            if toppar in m and m[toppar] == id(requester):
-                del m[toppar]
-            else:
-                logger.warning("Release denied for toppar {}".format(toppar))
