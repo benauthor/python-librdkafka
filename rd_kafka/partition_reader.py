@@ -107,21 +107,24 @@ class QueueReader(object):
         topic.kafka_handle.poll()
 
     def consume(self, timeout_ms=1000):
-        msg = lib.rd_kafka_consume_queue(self.cdata, timeout_ms)
-        if msg == ffi.NULL:
+        msg_cdata = lib.rd_kafka_consume_queue(self.cdata, timeout_ms)
+        if msg_cdata == ffi.NULL:
             if ffi.errno == errno.ETIMEDOUT:
+                logger.debug("Local time-out in consume()")
                 return None
             elif ffi.errno == errno.ENOENT:
                 raise PartitionReaderException(
                         "Got ENOENT while trying to read from queue")
-        elif msg.err == lib.RD_KAFKA_RESP_ERR_NO_ERROR:
-            return Message(msg)
-        elif msg.err == lib.RD_KAFKA_RESP_ERR__PARTITION_EOF:
+
+        msg = Message(msg_cdata, manage_memory=True)
+        if msg.cdata.err == lib.RD_KAFKA_RESP_ERR_NO_ERROR:
+            return msg
+        elif msg.cdata.err == lib.RD_KAFKA_RESP_ERR__PARTITION_EOF:
             # TODO maybe raise StopIteration to distinguish from ETIMEDOUT?
             return None
         else:
             # TODO we should inspect msg.payload here too
-            raise PartitionReaderException(err2str(msg.err))
+            raise PartitionReaderException(err2str(msg.cdata.err))
 
     def consume_batch(self, max_messages, timeout_ms=1000):
         msg_array = ffi.new('rd_kafka_message_t* []', max_messages)
@@ -133,6 +136,7 @@ class QueueReader(object):
             # TODO filter out error messages; eg. sometimes the last
             # message has no payload, but error flag 'No more messages'
             return map(Message, msg_array[0:n_out])
+            # TODO test if deallocs work ok with the above arrangement
 
     def consume_callback(self, callback_func, opaque=None, timeout_ms=1000):
         """
