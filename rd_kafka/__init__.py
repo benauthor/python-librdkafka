@@ -1,4 +1,5 @@
 import logging
+import time
 
 from . import config_handles, msg_opaques, finaliser
 from headers import ffi, lib
@@ -122,13 +123,18 @@ class Producer(KafkaHandle):
         # finalisers may end up being called in the wrong order:
         finaliser.register(self, Producer._flush_queues, self.cdata)
 
-    def flush_queues(self):
-        self._flush_queues(self.cdata)
+    def flush_queues(self, timeout_ms=10000):
+        self._flush_queues(self.cdata, timeout_ms)
 
     @staticmethod # static as finaliser mustn't capture references to self
-    def _flush_queues(cdata):
+    def _flush_queues(cdata, timeout_ms=10000):
+        starttime_secs = time.time()
         while lib.rd_kafka_outq_len(cdata) > 0:
-            # TODO make sure we can break out of here
+            if time.time() > starttime_secs + timeout_ms / 1000.:
+                logger.error(
+                        "Time-out while flushing producer-queue; {} messages "
+                        "remaining.".format(lib.rd_kafka_outq_len(cdata)))
+                break
             lib.rd_kafka_poll(cdata, 100)
 
 
