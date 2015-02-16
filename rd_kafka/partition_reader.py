@@ -93,7 +93,10 @@ class QueueReader(object):
         """
         Open given topic+partition for reading through this queue
 
-        Raise exception if another reader holds this toppar already
+        Raises exception if another reader holds this toppar already.
+        Warning: we don't get any errors back if partition_id doesn't exist
+        for this topic, but behaviour may then be undefined.  Best to check
+        topic.metadata() if you need to find valid partition_ids.
         """
         # TODO sensible default for start_offset
         if self.kafka_handle.cdata != topic.kafka_handle.cdata:

@@ -200,6 +200,7 @@ class ProduceConsumeTestCase(unittest.TestCase):
         config = {
                 "metadata.broker.list": kafka_docker,
                 "queue.buffering.max.ms": "10"}
+        testtopic_name = "ProduceConsumeTestCase"
 
         delivery_reports = {}
         def dr_msg_cb(msg, **kwargs):
@@ -207,17 +208,15 @@ class ProduceConsumeTestCase(unittest.TestCase):
 
         config["dr_msg_cb"] = dr_msg_cb
         producer = Producer(config)
-        p_topic = producer.open_topic("ProduceConsumeTestCase",
+        p_topic = producer.open_topic(testtopic_name,
                                       {"request.required.acks": "-1"})
 
         consumer = Consumer(config)
         reader = consumer.new_queue()
-        c_topic = consumer.open_topic("ProduceConsumeTestCase")
-        for partition_id in range(20):
-            try: # hacky way to read all partitions without getting metadata:
-                reader.add_toppar(c_topic, partition_id, c_topic.OFFSET_END)
-            except: # no such partition # FIXME we don't actually get exceptions!
-                break
+        c_topic = consumer.open_topic(testtopic_name)
+        meta = c_topic.metadata()
+        for partition_id in meta["topics"][testtopic_name]["partitions"]:
+            reader.add_toppar(c_topic, partition_id, c_topic.OFFSET_END)
 
         del config # this shouldn't break anything; it's just here to double-check
                    # that indeed it really doesn't
