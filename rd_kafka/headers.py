@@ -85,6 +85,7 @@ ffi.cdef(
     rd_kafka_t *rd_kafka_new (rd_kafka_type_t type, rd_kafka_conf_t *conf,
                               char *errstr, size_t errstr_size);
     void rd_kafka_destroy (rd_kafka_t *rk);
+    const char *rd_kafka_name (const rd_kafka_t *rk);
 
     rd_kafka_topic_t *rd_kafka_topic_new (rd_kafka_t *rk, const char *topic,
                                           rd_kafka_topic_conf_t *conf);
@@ -165,6 +166,7 @@ ffi.cdef(
 
     int rd_kafka_poll (rd_kafka_t *rk, int timeout_ms);
     int rd_kafka_outq_len (rd_kafka_t *rk);
+    int rd_kafka_wait_destroyed (int timeout_ms);
     """)
 lib = ffi.verify("#include <librdkafka/rdkafka.h>", libraries=['rdkafka'])
 

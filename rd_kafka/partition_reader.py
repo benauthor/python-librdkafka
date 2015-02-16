@@ -1,87 +1,23 @@
 import errno
+import logging
+import threading
 
-from headers import ffi as _ffi, lib as _lib
+from . import finaliser
+from headers import ffi, lib
 from message import Message
-from utils import _mk_errstr, _err2str, _errno2str
+from utils import err2str, errno2str
 
-
-# TODO store topics by name, not object handle, to avoid circular refs:
-open_partitions = set() # partitions that have been "started" in rd_kafka
 
 # NB these must be str, not int:
 OFFSET_BEGINNING = 'beginning'
 OFFSET_END = 'end'
 
 
+logger = logging.getLogger(__name__)
+
+
 class PartitionReaderException(Exception):
     pass
-
-
-def _open_partition(queue, topic, partition, start_offset):
-    """
-    Open a topic+partition for reading and return a lock for it
-
-    Subsequent calls for the same topic+partition ("toppar") will raise
-    exceptions, until the holder of the lock calls release() on it (which will
-    both close the toppar and release the lock).
-
-    We need this because of librdkafka's consumer API, where we are only
-    allowed 1 call to rd_kafka_consume_start_queue() for every
-    rd_kafka_consume_stop() (as per the docs, and as is obvious because it
-    would mix up offsets of concurrent readers)
-    """
-    lock = TopparLock((topic, partition))
-
-    if start_offset == OFFSET_BEGINNING:
-        start_offset = _lib.RD_KAFKA_OFFSET_BEGINNING
-    elif start_offset == OFFSET_END:
-        start_offset = _lib.RD_KAFKA_OFFSET_END
-    elif start_offset < 0:
-        # pythonistas expect this to be relative to end
-        start_offset += _lib.RD_KAFKA_OFFSET_TAIL_BASE
-
-    rv = _lib.rd_kafka_consume_start_queue(
-            topic.cdata, partition, start_offset, queue)
-    if rv:
-        raise PartitionReaderException(
-                "rd_kafka_consume_start_queue: " + _errno2str())
-    # FIXME we use the following hack to prevent ETIMEDOUT on a consume()
-    # call that comes too soon after rd_kafka_consume_start().  Slow!
-    topic.kafka_handle.poll()
-    return lock
-
-
-class TopparLock(object):
-    """ Hold a lock to prevent concurrent readers on a topic+partition """
-    def __init__(self, toppar):
-        if toppar in open_partitions:
-            self.toppar = None
-            raise PartitionReaderException(
-                    "Partition {} open elsewhere!".format(toppar))
-        else:
-            open_partitions.add(toppar)
-            self.toppar = toppar
-    
-    def __del__(self):
-        self.release()
-
-    def __copy__(self):
-        raise NotImplementedError("Permitting copies would be confusing")
-
-    def __deepcopy__(self, memo):
-        raise NotImplementedError("Permitting copies would be confusing")
-
-    def release(self):
-        if self.toppar is None:  # don't run twice!
-            return
-        open_partitions.remove(self.toppar)
-        top, par = self.toppar
-        rv = _lib.rd_kafka_consume_stop(top.cdata, par)
-        if rv:
-            raise PartitionReaderException(
-                    "rd_kafka_consume_stop({}, {}): ".format(top, par)
-                    + _errno2str())
-        self.toppar = None
 
 
 class QueueReader(object):
@@ -115,56 +51,95 @@ class QueueReader(object):
 
     def __init__(self, kafka_handle):
         self.kafka_handle = kafka_handle
-        self.cdata = _lib.rd_kafka_queue_new(self.kafka_handle.cdata)
-        self.locks = []  # see add_toppar()
+        self._cdata = lib.rd_kafka_queue_new(self.kafka_handle.cdata)
+        self.partitions = [] # NB only edit in-place; cf close()/_finalise()
 
-    def __del__(self):
-        self.close()
+        finaliser.register(
+                self, QueueReader._finalise, self.partitions, self._cdata)
 
-    def __copy__(self):
-        raise NotImplementedError("Permitting copies would be confusing")
+    @property
+    def cdata(self):
+        if self._cdata is None:
+            raise PartitionReaderException(
+                    "You called close() on this handle; get a fresh one.")
+            # Setting _cdata to None on close() was necessary in an earlier
+            # implementation of this class; probably it would work fine now
+            # if we'd do a close() and then some new add_toppar() calls, but
+            # it's hard to reason it through, so I've left this at its old
+            # behaviour.
+        else:
+            return self._cdata
 
-    def __deepcopy__(self, memo):
-        raise NotImplementedError("Permitting copies would be confusing")
+    @staticmethod
+    def _finalise(partitions, cdata):
+        # We should clean-out partitions before destroying the queue handle, so
+        # they can be cleanly stopped.  I'm not entirely sure this is
+        # sufficient to guarantee ordering of finalisers on every python
+        # implementation.  It works on CPython:
+        del partitions[:]
+        lib.rd_kafka_queue_destroy(cdata)
 
-    def add_toppar(self, topic, partition, start_offset):
-        """ Open given topic+partition for reading through this queue """
+    def close(self):
+        """ Close all partitions """
+        # Like self._finalise(), but we don't destroy _cdata here, because
+        # there's no way to tell the finaliser not to try destroying it again
+        # (which would then segfault).  Note also that we must clean-out
+        # self.partitions in-place, because we sent a reference for it to
+        # finaliser.register():
+        del self.partitions[:]
+        self._cdata = None
+
+    def add_toppar(self, topic, partition_id, start_offset):
+        """
+        Open given topic+partition for reading through this queue
+
+        Raises exception if another reader holds this toppar already.
+        Warning: we don't get any errors back if partition_id doesn't exist
+        for this topic, but behaviour may then be undefined.  Best to check
+        topic.metadata() if you need to find valid partition_ids.
+        """
         # TODO sensible default for start_offset
         if self.kafka_handle.cdata != topic.kafka_handle.cdata:
             raise PartitionReaderException(
                     "Topics must derive from same KafkaHandle as queue")
-        self.locks.append(
-            _open_partition(self.cdata, topic, partition, start_offset))
+        self.partitions.append(
+                ConsumerPartition(topic, partition_id, start_offset, self))
+        # FIXME we use the following hack to prevent ETIMEDOUT on a consume()
+        # call that comes too soon after rd_kafka_consume_start().  It's slow
+        # and it bothers me that I don't get why it's needed.
+        topic.kafka_handle.poll()
 
     def consume(self, timeout_ms=1000):
-        self._check_not_closed()
-        msg = _lib.rd_kafka_consume_queue(self.cdata, timeout_ms)
-        if msg == _ffi.NULL:
-            if _ffi.errno == errno.ETIMEDOUT:
+        msg_cdata = lib.rd_kafka_consume_queue(self.cdata, timeout_ms)
+        if msg_cdata == ffi.NULL:
+            if ffi.errno == errno.ETIMEDOUT:
+                logger.debug("Local time-out in consume()")
                 return None
-            elif _ffi.errno == errno.ENOENT:
+            elif ffi.errno == errno.ENOENT:
                 raise PartitionReaderException(
                         "Got ENOENT while trying to read from queue")
-        elif msg.err == _lib.RD_KAFKA_RESP_ERR_NO_ERROR:
-            return Message(msg)
-        elif msg.err == _lib.RD_KAFKA_RESP_ERR__PARTITION_EOF:
+
+        msg = Message(msg_cdata, manage_memory=True)
+        if msg.cdata.err == lib.RD_KAFKA_RESP_ERR_NO_ERROR:
+            return msg
+        elif msg.cdata.err == lib.RD_KAFKA_RESP_ERR__PARTITION_EOF:
             # TODO maybe raise StopIteration to distinguish from ETIMEDOUT?
             return None
         else:
             # TODO we should inspect msg.payload here too
-            raise PartitionReaderException(_err2str(msg.err))
+            raise PartitionReaderException(err2str(msg.cdata.err))
 
     def consume_batch(self, max_messages, timeout_ms=1000):
-        self._check_not_closed()
-        msg_array = _ffi.new('rd_kafka_message_t* []', max_messages)
-        n_out = _lib.rd_kafka_consume_batch_queue(
+        msg_array = ffi.new('rd_kafka_message_t* []', max_messages)
+        n_out = lib.rd_kafka_consume_batch_queue(
                     self.cdata, timeout_ms, msg_array, max_messages)
         if n_out == -1:
-            raise PartitionReaderException(_errno2str())
+            raise PartitionReaderException(errno2str())
         else:
             # TODO filter out error messages; eg. sometimes the last
             # message has no payload, but error flag 'No more messages'
             return map(Message, msg_array[0:n_out])
+            # TODO test if deallocs work ok with the above arrangement
 
     def consume_callback(self, callback_func, opaque=None, timeout_ms=1000):
         """
@@ -174,32 +149,91 @@ class QueueReader(object):
         and any python object you wish to pass in the 'opaque' above.
         After timeout_ms, return the number of messages consumed.
         """
-        self._check_not_closed()
-        opaque_p = _ffi.new_handle(opaque)
+        opaque_p = ffi.new_handle(opaque)
 
-        @_ffi.callback('void (rd_kafka_message_t *, void *)')
+        @ffi.callback('void (rd_kafka_message_t *, void *)')
         def func(msg, opaque):
             callback_func(Message(msg, manage_memory=False),
-                          _ffi.from_handle(opaque))
+                          ffi.from_handle(opaque))
 
-        n_out = _lib.rd_kafka_consume_callback_queue(
+        n_out = lib.rd_kafka_consume_callback_queue(
                     self.cdata, timeout_ms, func, opaque_p)
         if n_out == -1:
-            raise PartitionReaderException(_errno2str())
+            raise PartitionReaderException(errno2str())
         else:
             return n_out
 
-    def close(self):
-        if self.cdata is None:
-            return
-        try:
-            while self.locks:
-                self.locks.pop().release()
-        finally:
-            _lib.rd_kafka_queue_destroy(self.cdata)
-            self.cdata = None
 
-    def _check_not_closed(self):
-        if self.cdata is None:
-            raise PartitionReaderException(
-                    "You called close() on this handle; get a fresh one.")
+class ConsumerPartition(object):
+    """
+    A partition with a "started" local consumer-queue
+
+    This class controls access to partitions.  For a given Consumer instance
+    and topic, only one ConsumerPartition can be held at any time (as per
+    librdkafka requirements).  Instantiating another ConsumerPartition for the same
+    topic+partition (toppar) will fail.
+
+    The consumer-queue for the toppar will be kept active (active in the sense
+    of the rd_kafka_consume_start/consume_stop functions) for as long as the
+    ConsumerPartition is alive.
+    """
+    locked_partitions = set()
+    locked_partitions_writelock = threading.Lock()
+
+    def __init__(self, topic, partition_id, start_offset, queue=None):
+
+        self.topic = topic
+        self.partition_id = partition_id
+
+        toppar = (topic, partition_id)
+        with ConsumerPartition.locked_partitions_writelock:
+            if toppar in ConsumerPartition.locked_partitions:
+                raise PartitionReaderException(
+                        "Partition {} open elsewhere!".format(toppar))
+            else:
+                ConsumerPartition.locked_partitions.add(toppar)
+
+        # If we got this far, the partition is now locked for us, and we must
+        # ensure always to unlock it in due course:
+        finaliser.register(self,
+                           ConsumerPartition._finalise,
+                           topic,
+                           partition_id)
+
+        if queue is not None:
+            status_code = lib.rd_kafka_consume_start_queue(
+                    topic.cdata,
+                    partition_id,
+                    self._to_rdkafka_offset(start_offset),
+                    queue.cdata)
+            if status_code:
+                raise PartitionReaderException(
+                        "rd_kafka_consume_start_queue: " + errno2str())
+        else: # TODO we could call the non-queue version of consume_start here
+            pass
+
+
+    @staticmethod
+    def _finalise(topic, partition_id):
+        """ Remove consumer-queue for toppar and unlock it """
+        if lib.rd_kafka_consume_stop(topic.cdata, partition_id):
+            logger.error("Error from rd_kafka_consume_stop("
+                         "{}, {}): ".format(topic, partition_id)
+                         + errno2str())
+        with ConsumerPartition.locked_partitions_writelock:
+            ConsumerPartition.locked_partitions.remove((topic, partition_id))
+        logger.debug("Removed {}:{} from locked_partitions; remaining: "
+                     " {}".format(topic,
+                                  partition_id,
+                                  ConsumerPartition.locked_partitions))
+
+    @staticmethod
+    def _to_rdkafka_offset(start_offset):
+        if start_offset == OFFSET_BEGINNING:
+            start_offset = lib.RD_KAFKA_OFFSET_BEGINNING
+        elif start_offset == OFFSET_END:
+            start_offset = lib.RD_KAFKA_OFFSET_END
+        elif start_offset < 0:
+            # pythonistas expect this to be relative to end
+            start_offset += lib.RD_KAFKA_OFFSET_TAIL_BASE
+        return start_offset

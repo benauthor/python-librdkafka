@@ -1,13 +1,16 @@
 from collections import defaultdict
+import logging
 import random
 import time
 import unittest
 
 from rd_kafka import *
+from rd_kafka.partition_reader import PartitionReaderException, ConsumerPartition
 import example
 
 
 kafka_docker = "kafka:9092" # TODO make portable (see fig.yml etc)
+logging.basicConfig(level=logging.DEBUG)
 
 
 class ExampleTestCase(unittest.TestCase):
@@ -26,8 +29,7 @@ class QueueReaderTestCase(unittest.TestCase):
         t = p.open_topic("TopicPartitionTestCase")
         for _ in range(1000):
             t.produce(b"boohoohoo")
-        # force flushing queues:
-        p.poll(100)
+        p.flush_queues()
 
     def setUp(self):
         self.consumer = Consumer(self.config)
@@ -41,10 +43,28 @@ class QueueReaderTestCase(unittest.TestCase):
         self.reader.close()
         second_reader = self.topic.open_partition(0, 0)
         msg = second_reader.consume() # should succeed without exceptions
+
         # Now that second_reader has opened the partition again, reader should
         # still refuse to read from it:
         with self.assertRaises(PartitionReaderException):
             msg = self.reader.consume()
+
+    def test_after_close(self):
+        """ Test that methods called after close() raise exceptions """
+        self.reader.close()
+        with self.assertRaises(PartitionReaderException):
+            self.reader.add_toppar(self.topic, 0, -1)
+        with self.assertRaises(PartitionReaderException):
+            msg = self.reader.consume()
+
+        # finally, the add_toppar() above must not reserve toppar forever:
+        try:
+            # if this raises, the add_toppar above got hold of the toppar:
+            cp = ConsumerPartition(self.topic, 0, -1)
+        except:
+            del self.reader
+            # try again, this should work:
+            cp = ConsumerPartition(self.topic, 0, -1)
 
     def test_magic_offsets(self):
         self.reader.close()
@@ -85,7 +105,6 @@ class QueueReaderTestCase(unittest.TestCase):
                 messages.append(bytes(msg.payload))
         self.assertIn(stuff, messages)
         self.assertIn("boohoohoo", messages)
-
 
 
 class ConfigTestCase(unittest.TestCase):
@@ -181,6 +200,7 @@ class ProduceConsumeTestCase(unittest.TestCase):
         config = {
                 "metadata.broker.list": kafka_docker,
                 "queue.buffering.max.ms": "10"}
+        testtopic_name = "ProduceConsumeTestCase"
 
         delivery_reports = {}
         def dr_msg_cb(msg, **kwargs):
@@ -188,17 +208,15 @@ class ProduceConsumeTestCase(unittest.TestCase):
 
         config["dr_msg_cb"] = dr_msg_cb
         producer = Producer(config)
-        p_topic = producer.open_topic("ProduceConsumeTestCase",
+        p_topic = producer.open_topic(testtopic_name,
                                       {"request.required.acks": "-1"})
 
         consumer = Consumer(config)
         reader = consumer.new_queue()
-        c_topic = consumer.open_topic("ProduceConsumeTestCase")
-        for partition_id in range(20):
-            try: # hacky way to read all partitions without getting metadata:
-                reader.add_toppar(c_topic, partition_id, c_topic.OFFSET_END)
-            except: # no such partition # FIXME we don't actually get exceptions!
-                break
+        c_topic = consumer.open_topic(testtopic_name)
+        meta = c_topic.metadata()
+        for partition_id in meta["topics"][testtopic_name]["partitions"]:
+            reader.add_toppar(c_topic, partition_id, c_topic.OFFSET_END)
 
         del config # this shouldn't break anything; it's just here to double-check
                    # that indeed it really doesn't
