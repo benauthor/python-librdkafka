@@ -118,6 +118,8 @@ class Producer(KafkaHandle):
     def __init__(self, config_dict):
         super(Producer, self).__init__(handle_type=lib.RD_KAFKA_PRODUCER,
                                        config_dict=config_dict)
+        # NB order matters here; this must run after super.__init__() or the
+        # finalisers may end up being called in the wrong order:
         finaliser.register(self, Producer._flush_queues, self.cdata)
 
     def flush_queues(self):

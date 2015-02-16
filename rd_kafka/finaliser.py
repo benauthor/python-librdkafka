@@ -6,14 +6,9 @@ call the __del__() destructor methods reliably - especially for objects defined
 at module scope.  There's a great writeup on avoiding __del__s altogether, at
 http://code.activestate.com/recipes/577242-calling-c-level-finalizers-without-__del__/
 and the following borrows more than a few ideas from it.
-
-Also, we needed to be able to call rd_kafka_wait_destroyed(), to ensure correct
-unwinding of any state remaining in background threads - and initially relied
-on the atexit library for this.  However, as it turns out, atexit-registered
-functions run before module-scope objects are cleaned up, and so
-rd_kafka_wait_destroyed() timed-out waiting for the last KafkaHandles to die.
-We now handle this below instead.
 """
+import atexit
+from collections import OrderedDict
 import logging
 import weakref
 
@@ -24,21 +19,8 @@ __all__ = ["register"]
 logger = logging.getLogger(__name__)
 
 
-registered_objects = {}
+registered_objects = OrderedDict()
 """ Keeps alive references for objects that have register()-ed themselves """
-
-
-_last_remaining = set()
-"""
-This shall be the very last remaining object in registered_objects
-
-Note the leading underscore here is crucially important: as per the docs at
-https://docs.python.org/2/reference/datamodel.html#object.__del__ it ensures
-that _last_remaining gets deleted *before* registered_objects.  Were it the
-other way around, _last_remaining's finaliser-callback would never run!
-
-Also, why a set()? Because weakref doesn't like object(), that's all.
-"""
 
 
 def register(caller_obj, callback, *callback_args, **callback_kwargs):
@@ -49,33 +31,38 @@ def register(caller_obj, callback, *callback_args, **callback_kwargs):
     very careful not to (accidentally) close-over any references to caller_obj
     in either callback or any args/kwargs: if this happens, caller_obj shall
     never be garbage-collected!
+
+    Note that the finaliser callback provided *must* be safe to call *before*
+    caller_obj is gc'd: at program exit, we forcibly call all finalisers (see
+    force_all_finalisers() for details)
     """
     # obtain repr() outside the function-def, to avoid closing-over caller_obj:
     debugging_repr = repr(caller_obj)
 
-    def cb(weakref_obj):
+    def cb(weakref_obj=None):
         logger.debug("Finalising " + debugging_repr)
         callback(*callback_args, **callback_kwargs)
-        del registered_objects[id(weakref_obj)]
-        logging.debug("Unfinalised objs left: {}".format(registered_objects))
+        if weakref_obj is not None:
+            del registered_objects[id(weakref_obj)]
 
     ref = weakref.ref(caller_obj, cb)
-    registered_objects[id(ref)] = ref
+    registered_objects[id(ref)] = (ref, cb)
 
 
 def check_destroyed():
     """ Check if all KafkaHandles have been cleaned up """
     logging.debug("Waiting till all rdkafka handles have been destroyed.")
     if lib.rd_kafka_wait_destroyed(5000):
-        logging.error("Timeout in rd_kafka_wait_destroyed; "
-                      "unfinalised objs left: {}".format(registered_objects))
+        logging.error("Timed-out in rd_kafka_wait_destroyed.")
     else:
         logging.debug("All rdkafka handles have been destroyed.")
 
 
-# Under normal circumstances, _last_remaining should be the last object to go,
-# and so all the rd_kafka_*_destroy() calls should have been fielded by
-# this time.  We now register check_destroyed() as the finaliser for
-# _last_remaining, which should make the program wait until those *_destroy()
-# tasks have run to completion:
-register(_last_remaining, check_destroyed)
+@atexit.register
+def force_all_finalisers():
+    while registered_objects:
+        # We'll pop our finalisers in LIFO order, which should be
+        # sufficiently orderly with our simple object inter-dependencies
+        ref_id, (ref, finaliser_callback) = registered_objects.popitem()
+        finaliser_callback()
+    check_destroyed()
