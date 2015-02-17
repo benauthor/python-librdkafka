@@ -62,6 +62,10 @@ ffi.cdef(
                                                       char *json,
                                                       size_t json_len,
                                                       void *opaque));
+    const char **rd_kafka_conf_dump (rd_kafka_conf_t *conf, size_t *cntp);
+    const char **rd_kafka_topic_conf_dump (rd_kafka_topic_conf_t *conf,
+                                           size_t *cntp);
+    void rd_kafka_conf_dump_free (const char **arr, size_t cnt);
 
     rd_kafka_topic_conf_t *rd_kafka_topic_conf_new (void);
     void rd_kafka_topic_conf_destroy (rd_kafka_topic_conf_t *topic_conf);
