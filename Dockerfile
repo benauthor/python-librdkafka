@@ -5,7 +5,7 @@ RUN apt-get -y update
 
 # librdkafka build deps:
 RUN apt-get -y install build-essential zlib1g-dev unzip
-ADD https://github.com/edenhill/librdkafka/archive/11e9d2a1ffde769f10588aa8a8cda49ee7a990f1.zip /tmp/source.zip
+ADD https://github.com/edenhill/librdkafka/archive/9afc74fb51eb99a3d7dac1613e3cdf21c0a5c972.zip /tmp/source.zip
 RUN cd /tmp && \
     unzip source.zip && mv librdkafka-* librdkafka && \
     cd /tmp/librdkafka && \
