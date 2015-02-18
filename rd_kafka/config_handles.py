@@ -182,22 +182,38 @@ def default_config():
     Note that any settings that aren't set by default, as well as any
     callbacks, will be missing from this.
     """
-    # Dump a fresh config:
     conf_cdata = lib.rd_kafka_conf_new()
     dump_len = ffi.new("size_t *")
     dump_cdata = lib.rd_kafka_conf_dump(conf_cdata, dump_len)
+    lib.rd_kafka_conf_destroy(conf_cdata)
 
-    # What we got are alternating strings of keys and values; re-shuffle:
+    return _demux_conf_dump(dump_cdata, dump_len)
+
+
+def default_topic_config():
+    """
+    A dictionary pre-populated with rd_kafka_topic_conf_t defaults
+
+    Note that any settings that aren't set by default, as well as any
+    callbacks, will be missing from this.
+    """
+    conf_cdata = lib.rd_kafka_topic_conf_new()
+    dump_len = ffi.new("size_t *")
+    dump_cdata = lib.rd_kafka_topic_conf_dump(conf_cdata, dump_len)
+    lib.rd_kafka_topic_conf_destroy(conf_cdata)
+
+    return _demux_conf_dump(dump_cdata, dump_len)
+
+
+def _demux_conf_dump(dump_cdata, dump_len):
+    """
+    Turn cdata array of alternating keys and values into dict
+    """
     keys_values = [ffi.string(dump_cdata[i]) for i in range(dump_len[0])]
     keys_values = zip(keys_values[0::2], keys_values[1::2])
+    lib.rd_kafka_conf_dump_free(dump_cdata, dump_len[0])
 
     # Before we're done, purge the callbacks, which come as stringified
     # memory addresses - not really useful to build a new config with:
-    keys_values = filter(lambda kv: not kv[0].endswith("_cb"),
-                         keys_values)
-
-    # Free memory:
-    lib.rd_kafka_conf_dump_free(dump_cdata, dump_len[0])
-    lib.rd_kafka_conf_destroy(conf_cdata)
-
+    keys_values = filter(lambda kv: not kv[0].endswith("_cb"), keys_values)
     return dict(keys_values)

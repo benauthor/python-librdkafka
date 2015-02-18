@@ -5,6 +5,7 @@ import time
 import unittest
 
 from rd_kafka import *
+import rd_kafka.config_handles
 from rd_kafka.partition_reader import PartitionReaderException, ConsumerPartition
 import example
 
@@ -129,6 +130,15 @@ class ConfigTestCase(unittest.TestCase):
             t.produce(msg_payload)
         _poll_until_true(lambda: call_counter[0] == n_msgs, producer)
 
+    def test_default_config(self):
+        """
+        Check that default_config() returns acceptable input for KafkaHandles
+        """
+        default_config = rd_kafka.config_handles.default_config()
+        default_config.update(self.config)
+        prod = Producer(default_config)
+        cons = Consumer(default_config)
+
 
 class TopicConfigTestCase(unittest.TestCase):
     @classmethod
@@ -153,6 +163,18 @@ class TopicConfigTestCase(unittest.TestCase):
         for _ in range(n_msgs):
             t.produce(b"partition me", key=test_key)
         _poll_until_true(lambda: call_counter[0] >= n_msgs, self.producer)
+
+    def test_default_topic_config(self):
+        """
+        Check that default_topic_config() returns acceptable input for Topics
+        """
+        default_topic_config = rd_kafka.config_handles.default_topic_config()
+
+        producer_topic = self.producer.open_topic("test_default_topic_config",
+                                                  default_topic_config)
+        cons = Consumer(self.config)
+        consumer_topic = cons.open_topic("test_default_topic_config",
+                                         default_topic_config)
 
 
 class MsgOpaquesTestCase(unittest.TestCase):
